@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=docker.arvancloud.ir/library/python:3.11-slim
+ARG PYTHON_IMAGE=python:3.11-slim
 FROM ${PYTHON_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
