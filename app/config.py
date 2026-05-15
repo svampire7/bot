@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     marzban_ssl_verify: bool = Field(default=True, alias="MARZBAN_SSL_VERIFY")
 
     price_per_gb_toman: int = Field(default=220_000, alias="PRICE_PER_GB_TOMAN")
+    package_prices_toman: str = Field(
+        default="1:220000,3:600000,5:900000,10:1600000",
+        alias="PACKAGE_PRICES_TOMAN",
+    )
     min_custom_gb: int = Field(default=1, alias="MIN_CUSTOM_GB")
     max_custom_gb: int = Field(default=1000, alias="MAX_CUSTOM_GB")
 

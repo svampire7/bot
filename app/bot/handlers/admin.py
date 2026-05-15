@@ -36,6 +36,7 @@ from app.db.repositories import (
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
+from app.services.payment_service import format_package_prices, parse_package_prices
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
 from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
 from app.utils.validators import parse_positive_int, sanitize_username
@@ -268,6 +269,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
     async with sessionmaker() as session:
         text = _("settings_text",
                  price=await payment.price_per_gb(session),
+                 packages=format_package_prices(await payment.package_prices(session)),
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
                  card=html_code(await payment.card_number(session)),
@@ -297,6 +299,12 @@ async def save_setting_value(
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))
         return
+    if key == "package_prices_toman":
+        try:
+            value = format_package_prices(parse_package_prices(value))
+        except ValueError:
+            await message.answer(_("invalid_package_prices"))
+            return
     async with sessionmaker.begin() as session:
         await set_setting(session, key, value)
         await log_admin_action(session, message.from_user.id, "update_bot_setting", details=f"{key}=***")

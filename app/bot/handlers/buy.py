@@ -32,7 +32,15 @@ class BuyStates(StatesGroup):
     receipt = State()
 
 
-async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sessionmaker, settings, _):
+async def show_payment(
+    callback: CallbackQuery,
+    state: FSMContext,
+    gb: int,
+    sessionmaker,
+    settings,
+    _,
+    package_price: int | None = None,
+):
     payment = PaymentService(settings)
     async with sessionmaker() as session:
         price_per_gb = await payment.price_per_gb(session)
@@ -42,8 +50,9 @@ async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sess
             await callback.message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))  # type: ignore[union-attr]
             return
         card_number = await payment.card_number(session)
-        await state.update_data(gb=gb, price=gb * price_per_gb)
-        text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
+        price = package_price if package_price is not None else gb * price_per_gb
+        await state.update_data(gb=gb, price=price)
+        text = _("payment_instructions", gb=gb, price=toman(price),
                  card_number=html_code(card_number),
                  card_holder=html_escape(settings.card_holder_name),
                  bank=html_escape(settings.bank_name),
@@ -54,8 +63,10 @@ async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sess
 
 
 @router.callback_query(F.data.in_({"menu:buy", "menu:renew"}))
-async def buy_menu(callback: CallbackQuery, _) -> None:
-    await callback.message.edit_text(_("select_package"), reply_markup=packages_keyboard(_))  # type: ignore[union-attr]
+async def buy_menu(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
+    async with sessionmaker() as session:
+        packages = await PaymentService(settings).package_prices(session)
+    await callback.message.edit_text(_("select_package"), reply_markup=packages_keyboard(_, packages))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -68,7 +79,12 @@ async def package_selected(
     settings: Settings,
     _,
 ) -> None:
-    await show_payment(callback, state, callback_data.gb, sessionmaker, settings, _)
+    async with sessionmaker() as session:
+        package_price = await PaymentService(settings).package_price(session, callback_data.gb)
+    if package_price is None:
+        await callback.answer(_("package_not_available"), show_alert=True)
+        return
+    await show_payment(callback, state, callback_data.gb, sessionmaker, settings, _, package_price)
 
 
 @router.callback_query(F.data == "pkg:custom")

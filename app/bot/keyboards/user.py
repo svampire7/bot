@@ -32,10 +32,12 @@ def main_menu(_) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def packages_keyboard(_) -> InlineKeyboardMarkup:
+def packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarkup:
+    from app.utils.formatters import toman
+
     builder = InlineKeyboardBuilder()
-    for gb in (10, 20, 50, 100):
-        builder.button(text=f"{gb}GB", callback_data=PackageCb(gb=gb))
+    for gb, price in packages:
+        builder.button(text=f"{gb}GB - {toman(price)}", callback_data=PackageCb(gb=gb))
     builder.button(text=_("custom_gb"), callback_data="pkg:custom")
     builder.button(text=_("back"), callback_data="menu:main")
     builder.adjust(2, 2, 1, 1)
