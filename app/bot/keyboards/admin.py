@@ -118,7 +118,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_usdt_rate"), callback_data="admin:set:usdt_toman_rate")
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
-    builder.adjust(2, 2, 2, 2, 2, 1, 1)
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
