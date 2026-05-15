@@ -56,8 +56,8 @@ async def show_payment(
         await state.update_data(gb=gb, price=price, original_price=price, discount_code=None, discount_amount=0)
         text = _("payment_instructions", gb=gb, price=toman(price),
                  card_number=html_code(card_number),
-                 card_holder=html_escape(settings.card_holder_name),
-                 bank=html_escape(settings.bank_name),
+                 card_holder=html_escape(await payment.card_holder_name(session)),
+                 bank=html_escape(await payment.bank_name(session)),
                  support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
     await callback.message.edit_text(text, reply_markup=payment_keyboard(_, card_number))  # type: ignore[union-attr]
@@ -120,8 +120,8 @@ async def custom_gb(
         )
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
                  card_number=html_code(card_number),
-                 card_holder=html_escape(settings.card_holder_name),
-                 bank=html_escape(settings.bank_name),
+                 card_holder=html_escape(await payment.card_holder_name(session)),
+                 bank=html_escape(await payment.bank_name(session)),
                  support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
     await message.answer(text, reply_markup=payment_keyboard(_, card_number))

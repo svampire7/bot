@@ -112,9 +112,11 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("package_editor"), callback_data="admin:packages")
     builder.button(text=_("discount_codes"), callback_data="admin:discounts")
     builder.button(text=_("change_card"), callback_data="admin:set:card_number")
+    builder.button(text=_("change_card_holder"), callback_data="admin:set:card_holder_name")
+    builder.button(text=_("change_bank"), callback_data="admin:set:bank_name")
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
-    builder.adjust(2, 2, 2, 1, 1, 1)
+    builder.adjust(2, 2, 2, 2, 1, 1)
     return builder.as_markup()
 
 

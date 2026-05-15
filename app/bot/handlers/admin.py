@@ -363,6 +363,8 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
                  card=html_code(await payment.card_number(session)),
+                 card_holder=html_code(await payment.card_holder_name(session)),
+                 bank=html_code(await payment.bank_name(session)),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()

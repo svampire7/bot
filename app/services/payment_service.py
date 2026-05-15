@@ -43,6 +43,12 @@ class PaymentService:
     async def card_number(self, session: AsyncSession) -> str:
         return await get_setting(session, "card_number", self.settings.card_number)
 
+    async def card_holder_name(self, session: AsyncSession) -> str:
+        return await get_setting(session, "card_holder_name", self.settings.card_holder_name)
+
+    async def bank_name(self, session: AsyncSession) -> str:
+        return await get_setting(session, "bank_name", self.settings.bank_name)
+
     async def support_username(self, session: AsyncSession) -> str:
         return await get_setting(session, "support_username", self.settings.support_username)
 
