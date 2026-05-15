@@ -40,3 +40,9 @@ def packages_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("back"), callback_data="menu:main")
     builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
+
+
+def back_to_menu_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    return builder.as_markup()

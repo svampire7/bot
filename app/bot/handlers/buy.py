@@ -9,7 +9,7 @@ from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.keyboards.user import PackageCb, main_menu, packages_keyboard
+from app.bot.keyboards.user import PackageCb, back_to_menu_keyboard, main_menu, packages_keyboard
 from app.config import Settings
 from app.db.repositories import get_or_create_user
 from app.services.order_service import OrderService
@@ -42,7 +42,7 @@ async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sess
                  bank=settings.bank_name,
                  support=await payment.support_username(session))
     await state.set_state(BuyStates.receipt)
-    await callback.message.edit_text(text)  # type: ignore[union-attr]
+    await callback.message.edit_text(text, reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -67,7 +67,7 @@ async def package_selected(
 @router.callback_query(F.data == "pkg:custom")
 async def custom_package(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(BuyStates.custom_gb)
-    await callback.message.edit_text(_("enter_custom_gb"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_custom_gb"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -91,7 +91,7 @@ async def custom_gb(
                  bank=settings.bank_name,
                  support=await payment.support_username(session))
     await state.set_state(BuyStates.receipt)
-    await message.answer(text)
+    await message.answer(text, reply_markup=back_to_menu_keyboard(_))
 
 
 @router.message(BuyStates.receipt)
