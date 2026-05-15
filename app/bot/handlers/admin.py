@@ -20,6 +20,7 @@ from app.bot.keyboards.admin import (
     settings_keyboard,
     user_actions,
 )
+from app.bot.keyboards.user import main_menu
 from app.bot.middlewares.admin_auth import AdminFilter
 from app.config import Settings
 from app.db.models import Order, OrderStatus, User, VPNService, VPNServiceStatus
@@ -64,6 +65,13 @@ async def admin_entry(message: Message, _) -> None:
 @router.callback_query(F.data == "admin:dashboard")
 async def admin_home(callback: CallbackQuery, _) -> None:
     await callback.message.edit_text(_("admin_dashboard"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:user_area")
+async def admin_user_area(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.clear()
+    await callback.message.edit_text(_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
     await callback.answer()
 
 

@@ -29,9 +29,10 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("broadcast"), "admin:broadcast"),
         (_("bot_settings"), "admin:settings"),
         (_("stats"), "admin:stats"),
+        (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2, 2)
     return builder.as_markup()
 
 
