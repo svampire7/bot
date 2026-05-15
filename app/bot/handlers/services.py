@@ -101,6 +101,9 @@ async def order_detail(
              original_price=toman(order.original_price_toman or order.price_toman),
              discount=toman(order.discount_amount_toman or 0),
              discount_code=order.discount_code or "-",
+             payment_method=_("payment_method_" + order.payment_method),
+             crypto_tx_hash=order.crypto_tx_hash or "-",
+             crypto_expected_usdt=order.crypto_expected_usdt or "-",
              date=order.created_at.strftime("%Y-%m-%d %H:%M"),
              marzban_username=order.marzban_username or "-",
              note=order.admin_note or "-")

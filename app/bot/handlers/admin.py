@@ -108,11 +108,15 @@ async def show_pending(callback: CallbackQuery, sessionmaker: async_sessionmaker
                      original_price=toman(order.original_price_toman or order.price_toman),
                      discount=toman(order.discount_amount_toman or 0),
                      discount_code=order.discount_code or "-",
+                     payment_method=_("payment_method_" + order.payment_method),
+                     crypto_tx_hash=order.crypto_tx_hash or "-",
+                     crypto_expected_usdt=order.crypto_expected_usdt or "-",
                      service=context["service"],
                      total_orders=context["total_orders"],
                      completed_orders=context["completed_orders"],
                      duplicate_pending=context["duplicate_pending"],
                      duplicate_receipts=context["duplicate_receipts"],
+                     duplicate_crypto=context["duplicate_crypto"],
                      date=order.created_at.strftime("%Y-%m-%d %H:%M"))
             if order.receipt_file_id:
                 try:
@@ -303,11 +307,15 @@ async def search_user_message(message: Message, state: FSMContext, sessionmaker:
                      original_price=toman(order.original_price_toman or order.price_toman),
                      discount=toman(order.discount_amount_toman or 0),
                      discount_code=order.discount_code or "-",
+                     payment_method=_("payment_method_" + order.payment_method),
+                     crypto_tx_hash=order.crypto_tx_hash or "-",
+                     crypto_expected_usdt=order.crypto_expected_usdt or "-",
                      service=context["service"],
                      total_orders=context["total_orders"],
                      completed_orders=context["completed_orders"],
                      duplicate_pending=context["duplicate_pending"],
                      duplicate_receipts=context["duplicate_receipts"],
+                     duplicate_crypto=context["duplicate_crypto"],
                      date=order.created_at.strftime("%Y-%m-%d %H:%M"))
             keyboard = (
                 pending_order_keyboard(order.id, _)
@@ -365,6 +373,8 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  card=html_code(await payment.card_number(session)),
                  card_holder=html_code(await payment.card_holder_name(session)),
                  bank=html_code(await payment.bank_name(session)),
+                 crypto_wallet=html_code(await payment.crypto_usdt_trc20_wallet(session)),
+                 usdt_rate=await payment.usdt_toman_rate(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -387,7 +397,7 @@ async def save_setting_value(
     data = await state.get_data()
     key = data["setting_key"]
     value = (message.text or "").strip()
-    numeric_keys = {"price_per_gb_toman", "min_custom_gb", "max_custom_gb"}
+    numeric_keys = {"price_per_gb_toman", "min_custom_gb", "max_custom_gb", "usdt_toman_rate"}
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))
         return

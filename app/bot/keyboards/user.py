@@ -67,6 +67,26 @@ def payment_keyboard(_, card_number: str, allow_discount: bool = True) -> Inline
     return builder.as_markup()
 
 
+def payment_method_keyboard(_, allow_discount: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("pay_card"), callback_data="pay:card")
+    builder.button(text=_("pay_crypto"), callback_data="pay:crypto")
+    if allow_discount:
+        builder.button(text=_("apply_discount"), callback_data="pay:discount")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def crypto_payment_keyboard(_, wallet: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if wallet:
+        builder.button(text=_("copy_crypto_wallet"), copy_text=CopyTextButton(text=wallet))
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def service_copy_keyboard(_, subscription_url: str | None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if subscription_url:

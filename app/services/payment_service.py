@@ -52,6 +52,14 @@ class PaymentService:
     async def support_username(self, session: AsyncSession) -> str:
         return await get_setting(session, "support_username", self.settings.support_username)
 
+    async def crypto_usdt_trc20_wallet(self, session: AsyncSession) -> str:
+        return await get_setting(
+            session, "crypto_usdt_trc20_wallet", self.settings.crypto_usdt_trc20_wallet
+        )
+
+    async def usdt_toman_rate(self, session: AsyncSession) -> int:
+        return int(await get_setting(session, "usdt_toman_rate", str(self.settings.usdt_toman_rate)))
+
     async def min_custom_gb(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "min_custom_gb", str(self.settings.min_custom_gb)))
 

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     card_holder_name: str = Field(default="", alias="CARD_HOLDER_NAME")
     bank_name: str = Field(default="", alias="BANK_NAME")
     support_username: str = Field(default="", alias="SUPPORT_USERNAME")
+    crypto_usdt_trc20_wallet: str = Field(default="", alias="CRYPTO_USDT_TRC20_WALLET")
+    usdt_toman_rate: int = Field(default=70_000, alias="USDT_TOMAN_RATE")
+    trongrid_api_key: str | None = Field(default=None, alias="TRONGRID_API_KEY")
+    trongrid_base_url: str = Field(default="https://api.trongrid.io", alias="TRONGRID_BASE_URL")
 
     default_language: str = Field(default="fa", alias="DEFAULT_LANGUAGE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

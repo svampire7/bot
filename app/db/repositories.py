@@ -99,6 +99,10 @@ async def order_for_user(session: AsyncSession, user_id: int, order_id: int) -> 
     return await session.scalar(select(Order).where(Order.id == order_id, Order.user_id == user_id))
 
 
+async def order_by_crypto_tx_hash(session: AsyncSession, tx_hash: str) -> Order | None:
+    return await session.scalar(select(Order).where(Order.crypto_tx_hash == tx_hash))
+
+
 async def order_context(session: AsyncSession, order: Order) -> dict[str, int | str]:
     total_orders = await session.scalar(select(func.count(Order.id)).where(Order.user_id == order.user_id))
     completed_orders = await session.scalar(
@@ -113,18 +117,29 @@ async def order_context(session: AsyncSession, order: Order) -> dict[str, int | 
             Order.id != order.id,
         )
     )
-    duplicate_receipts = await session.scalar(
-        select(func.count(Order.id)).where(
-            Order.receipt_file_id == order.receipt_file_id,
-            Order.id != order.id,
+    duplicate_receipts = 0
+    if order.receipt_file_id:
+        duplicate_receipts = await session.scalar(
+            select(func.count(Order.id)).where(
+                Order.receipt_file_id == order.receipt_file_id,
+                Order.id != order.id,
+            )
         )
-    )
+    duplicate_crypto = 0
+    if order.crypto_tx_hash:
+        duplicate_crypto = await session.scalar(
+            select(func.count(Order.id)).where(
+                Order.crypto_tx_hash == order.crypto_tx_hash,
+                Order.id != order.id,
+            )
+        )
     service = await active_service_for_user(session, order.user_id)
     return {
         "total_orders": int(total_orders or 0),
         "completed_orders": int(completed_orders or 0),
         "duplicate_pending": int(duplicate_pending or 0),
         "duplicate_receipts": int(duplicate_receipts or 0),
+        "duplicate_crypto": int(duplicate_crypto or 0),
         "service": service.marzban_username if service else "-",
     }
 
