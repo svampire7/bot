@@ -29,6 +29,12 @@ class VPNServiceStatus(StrEnum):
     failed = "failed"
 
 
+class SupportTicketStatus(StrEnum):
+    open = "open"
+    answered = "answered"
+    closed = "closed"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -45,6 +51,7 @@ class User(Base):
 
     orders: Mapped[list[Order]] = relationship(back_populates="user")
     vpn_services: Mapped[list[VPNService]] = relationship(back_populates="user")
+    support_tickets: Mapped[list[SupportTicket]] = relationship(back_populates="user")
 
 
 class Order(Base):
@@ -55,6 +62,9 @@ class Order(Base):
     order_type: Mapped[str] = mapped_column(String(32))
     gb_amount: Mapped[int] = mapped_column(Integer)
     price_toman: Mapped[int] = mapped_column(Integer)
+    original_price_toman: Mapped[int | None] = mapped_column(Integer)
+    discount_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    discount_amount_toman: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default=OrderStatus.pending_admin.value, index=True)
     receipt_file_id: Mapped[str | None] = mapped_column(String(512))
     admin_note: Mapped[str | None] = mapped_column(Text)
@@ -106,3 +116,49 @@ class BotSetting(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+
+class SupportTicket(Base):
+    __tablename__ = "support_tickets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default=SupportTicketStatus.open.value, index=True)
+    last_message_preview: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="support_tickets")
+    messages: Mapped[list[SupportMessage]] = relationship(back_populates="ticket")
+
+
+class SupportMessage(Base):
+    __tablename__ = "support_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey("support_tickets.id"), index=True)
+    sender_type: Mapped[str] = mapped_column(String(16), index=True)
+    sender_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    message_type: Mapped[str] = mapped_column(String(32), default="message")
+    telegram_message_id: Mapped[int | None] = mapped_column(Integer)
+    text: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    ticket: Mapped[SupportTicket] = relationship(back_populates="messages")
+
+
+class DiscountCode(Base):
+    __tablename__ = "discount_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    percent: Mapped[int] = mapped_column(Integer, default=0)
+    amount_toman: Mapped[int] = mapped_column(Integer, default=0)
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

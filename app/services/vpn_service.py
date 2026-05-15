@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.db.models import OrderStatus, VPNService, VPNServiceStatus
-from app.db.repositories import active_service_for_user, order_with_user_for_update
+from app.db.repositories import active_service_for_user, get_discount_code, order_with_user_for_update
 from app.marzban.client import MarzbanClient
 from app.utils.formatters import bytes_to_gb
 from app.utils.validators import sanitize_username
@@ -68,6 +68,10 @@ class VPNProvisioningService:
                 service.status = VPNServiceStatus.active.value
                 order.status = OrderStatus.completed.value
                 order.marzban_username = service.marzban_username
+                if order.discount_code:
+                    discount = await get_discount_code(session, order.discount_code)
+                    if discount:
+                        discount.used_count += 1
         except Exception as exc:
             logger.exception("Failed to provision order", extra={"order_id": order_id})
             order.status = OrderStatus.failed.value

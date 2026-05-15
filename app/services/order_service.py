@@ -18,6 +18,9 @@ class OrderService:
         gb_amount: int,
         price_toman: int,
         receipt_file_id: str,
+        original_price_toman: int | None = None,
+        discount_code: str | None = None,
+        discount_amount_toman: int = 0,
     ) -> Order:
         active_service = await active_service_for_user(session, user_id)
         order = Order(
@@ -25,10 +28,12 @@ class OrderService:
             order_type=OrderType.renewal.value if active_service else OrderType.new.value,
             gb_amount=gb_amount,
             price_toman=price_toman,
+            original_price_toman=original_price_toman,
+            discount_code=discount_code,
+            discount_amount_toman=discount_amount_toman,
             status=OrderStatus.pending_admin.value,
             receipt_file_id=receipt_file_id,
         )
         session.add(order)
         await session.flush()
         return order
-

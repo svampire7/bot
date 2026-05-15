@@ -13,6 +13,11 @@ class PackageCb(CallbackData, prefix="pkg"):
     gb: int
 
 
+class OrderCb(CallbackData, prefix="ord"):
+    action: str
+    order_id: int
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="فارسی", callback_data=LangCb(code="fa"))
@@ -51,10 +56,12 @@ def back_to_menu_keyboard(_) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def payment_keyboard(_, card_number: str) -> InlineKeyboardMarkup:
+def payment_keyboard(_, card_number: str, allow_discount: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if card_number:
         builder.button(text=_("copy_card_number"), copy_text=CopyTextButton(text=card_number))
+    if allow_discount:
+        builder.button(text=_("apply_discount"), callback_data="pay:discount")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()
@@ -67,6 +74,25 @@ def service_copy_keyboard(_, subscription_url: str | None) -> InlineKeyboardMark
             text=_("copy_subscription_link"),
             copy_text=CopyTextButton(text=subscription_url),
         )
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def orders_keyboard(order_ids: list[int], _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for order_id in order_ids:
+        builder.button(text=_("view_order_button", order_id=order_id), callback_data=OrderCb(action="view", order_id=order_id))
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def order_detail_keyboard(order_id: int, status: str, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if status in {"rejected", "failed"}:
+        builder.button(text=_("contact_support"), callback_data="menu:support")
+    builder.button(text=_("back"), callback_data="menu:orders")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()

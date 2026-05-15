@@ -10,7 +10,12 @@ from app.bot.keyboards.admin import SupportReplyCb, admin_dashboard, support_rep
 from app.bot.keyboards.user import back_to_menu_keyboard, main_menu
 from app.config import Settings
 from app.db.models import User
-from app.db.repositories import get_user_by_telegram_id
+from app.db.repositories import (
+    add_support_message,
+    get_or_create_support_ticket,
+    get_user_by_telegram_id,
+    support_history,
+)
 from app.services.admin_service import log_admin_action
 
 router = Router()
@@ -41,8 +46,19 @@ async def receive_support_message(
     _,
 ) -> None:
     assert message.from_user
-    async with sessionmaker() as session:
+    async with sessionmaker.begin() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
+        if user:
+            ticket = await get_or_create_support_ticket(session, user.id)
+            await add_support_message(
+                session,
+                ticket,
+                "user",
+                message.from_user.id,
+                message.content_type,
+                message.message_id,
+                message.text or message.caption,
+            )
     username = f"@{message.from_user.username}" if message.from_user.username else "-"
     first_name = message.from_user.first_name or "-"
     header = _(
@@ -79,9 +95,16 @@ async def ask_support_reply(
         return
     async with sessionmaker() as session:
         user = await session.get(User, callback_data.user_id)
+        history = await support_history(session, callback_data.user_id)
     if not user:
         await callback.answer(_("user_not_found"), show_alert=True)
         return
+    if history:
+        lines = [
+            _("support_history_line", sender=_("support_sender_" + item.sender_type), text=(item.text or item.message_type)[:160])
+            for item in history
+        ]
+        await callback.message.answer(_("support_history_title") + "\n" + "\n".join(lines))  # type: ignore[union-attr]
     await state.update_data(support_user_id=user.id, support_telegram_id=user.telegram_id)
     await state.set_state(AdminSupportStates.reply)
     await callback.message.answer(_("support_reply_prompt"))  # type: ignore[union-attr]
@@ -117,6 +140,16 @@ async def send_support_reply(
         except Exception:
             await message.answer(_("support_reply_failed"))
             return
+        ticket = await get_or_create_support_ticket(session, user.id)
+        await add_support_message(
+            session,
+            ticket,
+            "admin",
+            message.from_user.id,
+            message.content_type,
+            message.message_id,
+            message.text or message.caption,
+        )
         await log_admin_action(
             session,
             message.from_user.id,

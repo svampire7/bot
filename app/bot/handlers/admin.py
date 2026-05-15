@@ -14,9 +14,14 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.bot.keyboards.admin import (
     AdminOrderCb,
     AdminUserCb,
+    DiscountAdminCb,
+    PackageAdminCb,
     admin_dashboard,
     confirm_broadcast,
     confirm_delete_keyboard,
+    discount_codes_keyboard,
+    order_recovery_keyboard,
+    package_editor_keyboard,
     pending_order_keyboard,
     settings_keyboard,
     user_actions,
@@ -24,9 +29,12 @@ from app.bot.keyboards.admin import (
 from app.bot.keyboards.user import main_menu, service_copy_keyboard
 from app.bot.middlewares.admin_auth import AdminFilter
 from app.config import Settings
-from app.db.models import Order, OrderStatus, User, VPNService, VPNServiceStatus
+from app.db.models import DiscountCode, Order, OrderStatus, User, VPNService, VPNServiceStatus
 from app.db.repositories import (
     active_service_for_user,
+    get_discount_code,
+    list_discount_codes,
+    order_context,
     order_with_user_for_update,
     pending_orders,
     search_user,
@@ -36,7 +44,8 @@ from app.db.repositories import (
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
-from app.services.payment_service import format_package_prices, parse_package_prices
+from app.services.discount_service import parse_discount_definition
+from app.services.payment_service import PaymentService, format_package_prices, parse_package_prices
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
 from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
 from app.utils.validators import parse_positive_int, sanitize_username
@@ -52,6 +61,8 @@ class AdminStates(StatesGroup):
     service_username = State()
     create_new_gb = State()
     setting_value = State()
+    package_value = State()
+    discount_value = State()
 
 
 def register_admin_filter(settings: Settings) -> None:
@@ -85,12 +96,23 @@ async def show_pending(callback: CallbackQuery, sessionmaker: async_sessionmaker
             await callback.message.edit_text(_("no_pending_orders"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
         else:
             order = orders[0]
+            context = await order_context(session, order)
             text = _("admin_order",
                      id=order.id,
+                     type=_("order_type_" + order.order_type),
+                     status=_("status_" + order.status),
                      username=order.user.telegram_username or "-",
                      telegram_id=order.user.telegram_id,
                      gb=order.gb_amount,
                      price=toman(order.price_toman),
+                     original_price=toman(order.original_price_toman or order.price_toman),
+                     discount=toman(order.discount_amount_toman or 0),
+                     discount_code=order.discount_code or "-",
+                     service=context["service"],
+                     total_orders=context["total_orders"],
+                     completed_orders=context["completed_orders"],
+                     duplicate_pending=context["duplicate_pending"],
+                     duplicate_receipts=context["duplicate_receipts"],
                      date=order.created_at.strftime("%Y-%m-%d %H:%M"))
             if order.receipt_file_id:
                 try:
@@ -131,14 +153,17 @@ async def admin_order_action(
             return
         user_lang = order.user.language
         if callback_data.action == "reject":
-            if order.status != OrderStatus.pending_admin.value:
+            if order.status not in {OrderStatus.pending_admin.value, OrderStatus.failed.value}:
                 await callback.answer(_("order_not_pending"), show_alert=True)
                 return
             order.status = OrderStatus.rejected.value
             await log_admin_action(session, callback.from_user.id, "reject_order", order_id)
             await session.commit()
             await bot.send_message(order.user.telegram_id, i18n.t("order_rejected", user_lang))
-            await callback.message.edit_caption(caption=_("order_rejected_admin", order_id=order_id))  # type: ignore[union-attr]
+            try:
+                await callback.message.edit_caption(caption=_("order_rejected_admin", order_id=order_id))  # type: ignore[union-attr]
+            except TelegramBadRequest:
+                await callback.message.edit_text(_("order_rejected_admin", order_id=order_id), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
             await callback.answer()
             return
         if callback_data.action == "new_receipt":
@@ -150,7 +175,35 @@ async def admin_order_action(
         if callback_data.action == "view_user":
             await show_user_profile(callback, session, order.user_id, _)
             return
-    if callback_data.action == "approve":
+        if callback_data.action == "complete":
+            if order.status == OrderStatus.completed.value:
+                await callback.answer(_("order_not_pending"), show_alert=True)
+                return
+            service = await active_service_for_user(session, order.user_id)
+            if not service:
+                await callback.answer(_("no_active_service_for_completion"), show_alert=True)
+                return
+            order.status = OrderStatus.completed.value
+            order.marzban_username = service.marzban_username
+            if order.discount_code:
+                discount = await get_discount_code(session, order.discount_code)
+                if discount:
+                    discount.used_count += 1
+            await log_admin_action(session, callback.from_user.id, "mark_order_completed", order_id)
+            await session.commit()
+            await bot.send_message(order.user.telegram_id, i18n.t("order_marked_completed", user_lang))
+            await callback.message.edit_text(_("order_completed_admin", order_id=order_id), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+            await callback.answer()
+            return
+        if callback_data.action == "retry":
+            if order.status != OrderStatus.failed.value:
+                await callback.answer(_("retry_only_failed"), show_alert=True)
+                return
+            order.status = OrderStatus.pending_admin.value
+            order.admin_note = None
+            await log_admin_action(session, callback.from_user.id, "retry_failed_order", order_id)
+            await session.commit()
+    if callback_data.action in {"approve", "retry"}:
         async with sessionmaker.begin() as session:
             try:
                 service, _created, config_links = await VPNProvisioningService(
@@ -190,7 +243,10 @@ async def admin_order_action(
                 await callback.answer(_("action_failed", error=str(exc)), show_alert=True)
                 return
         await bot.send_message(telegram_id, text, reply_markup=service_copy_keyboard(_, subscription_url))
-        await callback.message.edit_caption(caption=_("order_completed_admin", order_id=order_id))  # type: ignore[union-attr]
+        try:
+            await callback.message.edit_caption(caption=_("order_completed_admin", order_id=order_id))  # type: ignore[union-attr]
+        except TelegramBadRequest:
+            await callback.message.edit_text(_("order_completed_admin", order_id=order_id), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
         await callback.answer()
 
 
@@ -226,8 +282,42 @@ async def ask_search(callback: CallbackQuery, state: FSMContext, _) -> None:
 
 @router.message(AdminStates.search)
 async def search_user_message(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, _) -> None:
+    query = (message.text or "").strip()
     async with sessionmaker() as session:
-        user = await search_user(session, message.text or "")
+        if query.lower().startswith("order "):
+            order_id = parse_positive_int(query.split(maxsplit=1)[1])
+            order = await session.scalar(select(Order).where(Order.id == order_id)) if order_id else None
+            if not order:
+                await message.answer(_("order_not_found"))
+                return
+            context = await order_context(session, order)
+            user = await session.get(User, order.user_id)
+            text = _("admin_order",
+                     id=order.id,
+                     type=_("order_type_" + order.order_type),
+                     status=_("status_" + order.status),
+                     username=user.telegram_username if user else "-",
+                     telegram_id=user.telegram_id if user else "-",
+                     gb=order.gb_amount,
+                     price=toman(order.price_toman),
+                     original_price=toman(order.original_price_toman or order.price_toman),
+                     discount=toman(order.discount_amount_toman or 0),
+                     discount_code=order.discount_code or "-",
+                     service=context["service"],
+                     total_orders=context["total_orders"],
+                     completed_orders=context["completed_orders"],
+                     duplicate_pending=context["duplicate_pending"],
+                     duplicate_receipts=context["duplicate_receipts"],
+                     date=order.created_at.strftime("%Y-%m-%d %H:%M"))
+            keyboard = (
+                pending_order_keyboard(order.id, _)
+                if order.status == OrderStatus.pending_admin.value
+                else order_recovery_keyboard(order.id, _)
+            )
+            await message.answer(text, reply_markup=keyboard)
+            await state.clear()
+            return
+        user = await search_user(session, query)
         if not user:
             await message.answer(_("user_not_found"))
             return
@@ -308,6 +398,145 @@ async def save_setting_value(
     async with sessionmaker.begin() as session:
         await set_setting(session, key, value)
         await log_admin_action(session, message.from_user.id, "update_bot_setting", details=f"{key}=***")
+    await state.clear()
+    await message.answer(_("setting_saved"), reply_markup=admin_dashboard(_))
+
+
+@router.callback_query(F.data == "admin:packages")
+async def admin_package_editor(callback: CallbackQuery, settings: Settings, sessionmaker: async_sessionmaker, _) -> None:
+    async with sessionmaker() as session:
+        packages = await PaymentService(settings).package_prices(session)
+    lines = [f"{gb}GB = {toman(price)}" for gb, price in packages]
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("package_editor_text", packages="\n".join(lines)),
+        reply_markup=package_editor_keyboard(packages, _),
+    )
+    await callback.answer()
+
+
+@router.callback_query(PackageAdminCb.filter())
+async def package_editor_action(
+    callback: CallbackQuery,
+    callback_data: PackageAdminCb,
+    state: FSMContext,
+    settings: Settings,
+    sessionmaker: async_sessionmaker,
+    _,
+) -> None:
+    if callback_data.action == "remove":
+        async with sessionmaker.begin() as session:
+            payment = PaymentService(settings)
+            packages = await payment.package_prices(session)
+            packages = [(gb, price) for gb, price in packages if gb != callback_data.gb]
+            if not packages:
+                await callback.answer(_("cannot_remove_last_package"), show_alert=True)
+                return
+            await set_setting(session, "package_prices_toman", format_package_prices(packages))
+            await log_admin_action(session, callback.from_user.id, "remove_package", details=str(callback_data.gb))  # type: ignore[union-attr]
+        await callback.message.edit_text(_("setting_saved"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    await state.update_data(package_action=callback_data.action, package_gb=callback_data.gb)
+    await state.set_state(AdminStates.package_value)
+    prompt = _("enter_package_price", gb=callback_data.gb) if callback_data.action == "edit" else _("enter_package_definition")
+    await callback.message.edit_text(prompt)  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(AdminStates.package_value)
+async def save_package_value(
+    message: Message, state: FSMContext, settings: Settings, sessionmaker: async_sessionmaker, _
+) -> None:
+    assert message.from_user
+    data = await state.get_data()
+    action = data["package_action"]
+    async with sessionmaker.begin() as session:
+        packages = dict(await PaymentService(settings).package_prices(session))
+        try:
+            if action == "edit":
+                gb = int(data["package_gb"])
+                price = parse_positive_int(message.text or "")
+                if not price:
+                    raise ValueError
+                packages[gb] = price
+            else:
+                raw_gb, raw_price = (message.text or "").replace(":", " ").split()[:2]
+                gb = parse_positive_int(raw_gb)
+                price = parse_positive_int(raw_price)
+                if not gb or not price:
+                    raise ValueError
+                packages[gb] = price
+        except Exception:
+            await message.answer(_("invalid_package_value"))
+            return
+        value = format_package_prices(sorted(packages.items()))
+        await set_setting(session, "package_prices_toman", value)
+        await log_admin_action(session, message.from_user.id, "update_package", details=value)
+    await state.clear()
+    await message.answer(_("setting_saved"), reply_markup=admin_dashboard(_))
+
+
+@router.callback_query(F.data == "admin:discounts")
+async def admin_discounts(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    async with sessionmaker() as session:
+        discounts = await list_discount_codes(session, limit=10)
+    lines = [
+        _("discount_line",
+          code=d.code,
+          percent=d.percent,
+          amount=toman(d.amount_toman),
+          used=d.used_count,
+          max_uses=d.max_uses or "-",
+          status=_("enabled") if d.is_active else _("disabled"))
+        for d in discounts
+    ]
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("discounts_text", discounts="\n".join(lines) or "-"),
+        reply_markup=discount_codes_keyboard([d.code for d in discounts], _),
+    )
+    await callback.answer()
+
+
+@router.callback_query(DiscountAdminCb.filter())
+async def discount_action(
+    callback: CallbackQuery,
+    callback_data: DiscountAdminCb,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    _,
+) -> None:
+    if callback_data.action == "toggle":
+        async with sessionmaker.begin() as session:
+            discount = await session.scalar(select(DiscountCode).where(DiscountCode.code == callback_data.code))
+            if discount:
+                discount.is_active = not discount.is_active
+                await log_admin_action(session, callback.from_user.id, "toggle_discount", details=discount.code)  # type: ignore[union-attr]
+        await callback.message.edit_text(_("setting_saved"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    await state.set_state(AdminStates.discount_value)
+    await callback.message.edit_text(_("enter_discount_definition"))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(AdminStates.discount_value)
+async def save_discount(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, _) -> None:
+    assert message.from_user
+    try:
+        code, percent, amount, max_uses = parse_discount_definition(message.text or "")
+    except Exception:
+        await message.answer(_("invalid_discount_definition"))
+        return
+    async with sessionmaker.begin() as session:
+        discount = await session.scalar(select(DiscountCode).where(DiscountCode.code == code))
+        if not discount:
+            discount = DiscountCode(code=code)
+            session.add(discount)
+        discount.percent = percent
+        discount.amount_toman = amount
+        discount.max_uses = max_uses
+        discount.is_active = True
+        await log_admin_action(session, message.from_user.id, "save_discount", details=code)
     await state.clear()
     await message.answer(_("setting_saved"), reply_markup=admin_dashboard(_))
 

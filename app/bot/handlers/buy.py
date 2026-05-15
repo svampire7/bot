@@ -18,6 +18,7 @@ from app.bot.keyboards.user import (
 )
 from app.config import Settings
 from app.db.repositories import get_or_create_user
+from app.services.discount_service import apply_discount
 from app.services.order_service import OrderService
 from app.services.payment_service import PaymentService
 from app.utils.formatters import html_code, html_escape, toman
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 class BuyStates(StatesGroup):
     custom_gb = State()
     receipt = State()
+    discount_code = State()
 
 
 async def show_payment(
@@ -51,7 +53,7 @@ async def show_payment(
             return
         card_number = await payment.card_number(session)
         price = package_price if package_price is not None else gb * price_per_gb
-        await state.update_data(gb=gb, price=price)
+        await state.update_data(gb=gb, price=price, original_price=price, discount_code=None, discount_amount=0)
         text = _("payment_instructions", gb=gb, price=toman(price),
                  card_number=html_code(card_number),
                  card_holder=html_escape(settings.card_holder_name),
@@ -108,7 +110,14 @@ async def custom_gb(
             return
         price_per_gb = await payment.price_per_gb(session)
         card_number = await payment.card_number(session)
-        await state.update_data(gb=gb, price=gb * price_per_gb)
+        price = gb * price_per_gb
+        await state.update_data(
+            gb=gb,
+            price=price,
+            original_price=price,
+            discount_code=None,
+            discount_amount=0,
+        )
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
                  card_number=html_code(card_number),
                  card_holder=html_escape(settings.card_holder_name),
@@ -116,6 +125,39 @@ async def custom_gb(
                  support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
     await message.answer(text, reply_markup=payment_keyboard(_, card_number))
+
+
+@router.callback_query(F.data == "pay:discount", BuyStates.receipt)
+async def ask_discount_code(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.set_state(BuyStates.discount_code)
+    await callback.message.answer(_("enter_discount_code"))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(BuyStates.discount_code)
+async def discount_code_entered(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    _,
+) -> None:
+    code = (message.text or "").strip()
+    data = await state.get_data()
+    original_price = int(data.get("original_price") or data["price"])
+    async with sessionmaker() as session:
+        discount, amount, final_price = await apply_discount(session, code, original_price)
+        card_number = await PaymentService(settings).card_number(session)
+    if not discount:
+        await state.set_state(BuyStates.receipt)
+        await message.answer(_("discount_invalid"), reply_markup=payment_keyboard(_, card_number))
+        return
+    await state.update_data(price=final_price, discount_code=discount.code, discount_amount=amount)
+    await state.set_state(BuyStates.receipt)
+    await message.answer(
+        _("discount_applied", code=discount.code, discount=toman(amount), price=toman(final_price)),
+        reply_markup=payment_keyboard(_, card_number, allow_discount=False),
+    )
 
 
 @router.message(BuyStates.receipt)
@@ -152,7 +194,14 @@ async def receipt_uploaded(
             settings.default_language,
         )
         order = await OrderService(settings).create_order(
-            session, user.id, int(data["gb"]), int(data["price"]), receipt_file_id
+            session,
+            user.id,
+            int(data["gb"]),
+            int(data["price"]),
+            receipt_file_id,
+            original_price_toman=int(data.get("original_price") or data["price"]),
+            discount_code=data.get("discount_code"),
+            discount_amount_toman=int(data.get("discount_amount") or 0),
         )
         await session.commit()
     await state.clear()
@@ -160,10 +209,20 @@ async def receipt_uploaded(
     from app.bot.keyboards.admin import pending_order_keyboard
     admin_text = _("admin_order",
                    id=order.id,
+                   type=_("order_type_" + order.order_type),
+                   status=_("status_" + order.status),
                    username=message.from_user.username or "-",
                    telegram_id=message.from_user.id,
                    gb=order.gb_amount,
                    price=toman(order.price_toman),
+                   original_price=toman(order.original_price_toman or order.price_toman),
+                   discount=toman(order.discount_amount_toman or 0),
+                   discount_code=order.discount_code or "-",
+                   service="-",
+                   total_orders=1,
+                   completed_orders=0,
+                   duplicate_pending=0,
+                   duplicate_receipts=0,
                    date=order.created_at.strftime("%Y-%m-%d %H:%M"))
     for admin_id in settings.admin_telegram_ids:
         try:

@@ -6,7 +6,18 @@ from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import BotSetting, Order, OrderStatus, User, VPNService, VPNServiceStatus
+from app.db.models import (
+    BotSetting,
+    DiscountCode,
+    Order,
+    OrderStatus,
+    SupportMessage,
+    SupportTicket,
+    SupportTicketStatus,
+    User,
+    VPNService,
+    VPNServiceStatus,
+)
 
 
 async def get_or_create_user(
@@ -84,6 +95,121 @@ async def user_order_history(session: AsyncSession, user_id: int, limit: int = 1
     return list(result)
 
 
+async def order_for_user(session: AsyncSession, user_id: int, order_id: int) -> Order | None:
+    return await session.scalar(select(Order).where(Order.id == order_id, Order.user_id == user_id))
+
+
+async def order_context(session: AsyncSession, order: Order) -> dict[str, int | str]:
+    total_orders = await session.scalar(select(func.count(Order.id)).where(Order.user_id == order.user_id))
+    completed_orders = await session.scalar(
+        select(func.count(Order.id)).where(
+            Order.user_id == order.user_id, Order.status == OrderStatus.completed.value
+        )
+    )
+    duplicate_pending = await session.scalar(
+        select(func.count(Order.id)).where(
+            Order.user_id == order.user_id,
+            Order.status == OrderStatus.pending_admin.value,
+            Order.id != order.id,
+        )
+    )
+    duplicate_receipts = await session.scalar(
+        select(func.count(Order.id)).where(
+            Order.receipt_file_id == order.receipt_file_id,
+            Order.id != order.id,
+        )
+    )
+    service = await active_service_for_user(session, order.user_id)
+    return {
+        "total_orders": int(total_orders or 0),
+        "completed_orders": int(completed_orders or 0),
+        "duplicate_pending": int(duplicate_pending or 0),
+        "duplicate_receipts": int(duplicate_receipts or 0),
+        "service": service.marzban_username if service else "-",
+    }
+
+
+async def latest_support_ticket(session: AsyncSession, user_id: int) -> SupportTicket | None:
+    return await session.scalar(
+        select(SupportTicket)
+        .where(SupportTicket.user_id == user_id)
+        .order_by(SupportTicket.id.desc())
+        .limit(1)
+    )
+
+
+async def get_or_create_support_ticket(session: AsyncSession, user_id: int) -> SupportTicket:
+    ticket = await latest_support_ticket(session, user_id)
+    if ticket and ticket.status != SupportTicketStatus.closed.value:
+        return ticket
+    ticket = SupportTicket(user_id=user_id, status=SupportTicketStatus.open.value)
+    session.add(ticket)
+    await session.flush()
+    return ticket
+
+
+async def add_support_message(
+    session: AsyncSession,
+    ticket: SupportTicket,
+    sender_type: str,
+    sender_telegram_id: int,
+    message_type: str,
+    telegram_message_id: int | None,
+    text: str | None,
+) -> SupportMessage:
+    preview = (text or message_type or "")[:500]
+    ticket.status = (
+        SupportTicketStatus.open.value if sender_type == "user" else SupportTicketStatus.answered.value
+    )
+    ticket.last_message_preview = preview
+    message = SupportMessage(
+        ticket_id=ticket.id,
+        sender_type=sender_type,
+        sender_telegram_id=sender_telegram_id,
+        message_type=message_type,
+        telegram_message_id=telegram_message_id,
+        text=text,
+    )
+    session.add(message)
+    await session.flush()
+    return message
+
+
+async def support_history(session: AsyncSession, user_id: int, limit: int = 6) -> list[SupportMessage]:
+    ticket = await latest_support_ticket(session, user_id)
+    if not ticket:
+        return []
+    result = await session.scalars(
+        select(SupportMessage)
+        .where(SupportMessage.ticket_id == ticket.id)
+        .order_by(SupportMessage.id.desc())
+        .limit(limit)
+    )
+    return list(reversed(list(result)))
+
+
+def normalize_discount_code(code: str) -> str:
+    return code.strip().upper().replace(" ", "")
+
+
+async def get_discount_code(session: AsyncSession, code: str) -> DiscountCode | None:
+    return await session.scalar(select(DiscountCode).where(DiscountCode.code == normalize_discount_code(code)))
+
+
+async def active_discount_code(session: AsyncSession, code: str) -> DiscountCode | None:
+    discount = await get_discount_code(session, code)
+    if not discount or not discount.is_active:
+        return None
+    if discount.max_uses is not None and discount.used_count >= discount.max_uses:
+        return None
+    return discount
+
+
+async def list_discount_codes(session: AsyncSession, limit: int = 10) -> list[DiscountCode]:
+    result = await session.scalars(select(DiscountCode).order_by(DiscountCode.id.desc()).limit(limit))
+    return list(result)
+
+
 async def get_setting(session: AsyncSession, key: str, default: str) -> str:
     setting = await session.get(BotSetting, key)
     return setting.value if setting else default
@@ -141,4 +267,3 @@ async def stats(session: AsyncSession) -> dict[str, int]:
         "today_revenue": int(today_revenue or 0),
         "month_revenue": int(month_revenue or 0),
     }
-
