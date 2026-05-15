@@ -26,7 +26,11 @@ class MarzbanClient:
         self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "MarzbanClient":
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+        connector = aiohttp.TCPConnector(ssl=self.settings.marzban_ssl_verify)
+        self.session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=30),
+            connector=connector,
+        )
         if not self.token:
             await self.authenticate()
         return self
@@ -55,7 +59,11 @@ class MarzbanClient:
         auth: bool = True,
     ) -> dict[str, Any]:
         if not self.session:
-            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+            connector = aiohttp.TCPConnector(ssl=self.settings.marzban_ssl_verify)
+            self.session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+                connector=connector,
+            )
         headers = {}
         if auth and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
