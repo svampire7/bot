@@ -34,6 +34,7 @@ Edit these required values:
 ```env
 BOT_TOKEN=
 ADMIN_TELEGRAM_IDS=123456789,987654321
+TELEGRAM_PROXY_URL=
 
 MARZBAN_BASE_URL=https://your-marzban.example.com
 MARZBAN_USERNAME=admin
@@ -47,6 +48,8 @@ SUPPORT_USERNAME=@support
 ```
 
 The default price is `220000` Toman per GB. Custom package limits are controlled by `MIN_CUSTOM_GB` and `MAX_CUSTOM_GB`.
+
+If your server cannot reach `https://api.telegram.org`, set `TELEGRAM_PROXY_URL` to an HTTP/SOCKS proxy URL supported by aiohttp, or deploy on a server/network with Telegram API access.
 
 ## Run With Docker Compose
 

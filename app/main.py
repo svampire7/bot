@@ -6,6 +6,7 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
@@ -23,9 +24,11 @@ async def main() -> None:
     setup_logging(settings.log_level)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     storage = RedisStorage(redis=redis)
+    bot_session = AiohttpSession(proxy=settings.telegram_proxy_url) if settings.telegram_proxy_url else None
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=bot_session,
     )
     dp = Dispatcher(storage=storage)
     i18n = I18n(Path("app/bot/i18n"), settings.default_language)
