@@ -51,6 +51,8 @@
   "user_area": "User Menu",
   "back": "Back",
   "back_to_menu": "Back to Menu",
+  "copy_card_number": "Copy Card Number",
+  "copy_subscription_link": "Copy Subscription Link",
   "approve": "Approve",
   "reject": "Reject",
   "ask_new_receipt": "New Receipt",

@@ -9,7 +9,13 @@ from aiogram.types import CallbackQuery, Message
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.keyboards.user import PackageCb, back_to_menu_keyboard, main_menu, packages_keyboard
+from app.bot.keyboards.user import (
+    PackageCb,
+    back_to_menu_keyboard,
+    main_menu,
+    packages_keyboard,
+    payment_keyboard,
+)
 from app.config import Settings
 from app.db.repositories import get_or_create_user
 from app.services.order_service import OrderService
@@ -35,14 +41,15 @@ async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sess
         if gb < min_gb or gb > max_gb:
             await callback.message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))  # type: ignore[union-attr]
             return
+        card_number = await payment.card_number(session)
         await state.update_data(gb=gb, price=gb * price_per_gb)
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
-                 card_number=html_code(await payment.card_number(session)),
+                 card_number=html_code(card_number),
                  card_holder=html_escape(settings.card_holder_name),
                  bank=html_escape(settings.bank_name),
                  support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
-    await callback.message.edit_text(text, reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
+    await callback.message.edit_text(text, reply_markup=payment_keyboard(_, card_number))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -84,14 +91,15 @@ async def custom_gb(
             await message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))
             return
         price_per_gb = await payment.price_per_gb(session)
+        card_number = await payment.card_number(session)
         await state.update_data(gb=gb, price=gb * price_per_gb)
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
-                 card_number=html_code(await payment.card_number(session)),
+                 card_number=html_code(card_number),
                  card_holder=html_escape(settings.card_holder_name),
                  bank=html_escape(settings.bank_name),
                  support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
-    await message.answer(text, reply_markup=back_to_menu_keyboard(_))
+    await message.answer(text, reply_markup=payment_keyboard(_, card_number))
 
 
 @router.message(BuyStates.receipt)

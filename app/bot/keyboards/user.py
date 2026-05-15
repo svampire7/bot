@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram.filters.callback_data import CallbackData
-from aiogram.types import InlineKeyboardMarkup
+from aiogram.types import CopyTextButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
@@ -45,4 +45,25 @@ def packages_keyboard(_) -> InlineKeyboardMarkup:
 def back_to_menu_keyboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    return builder.as_markup()
+
+
+def payment_keyboard(_, card_number: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if card_number:
+        builder.button(text=_("copy_card_number"), copy_text=CopyTextButton(text=card_number))
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def service_copy_keyboard(_, subscription_url: str | None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if subscription_url:
+        builder.button(
+            text=_("copy_subscription_link"),
+            copy_text=CopyTextButton(text=subscription_url),
+        )
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()

@@ -20,7 +20,7 @@ from app.bot.keyboards.admin import (
     settings_keyboard,
     user_actions,
 )
-from app.bot.keyboards.user import main_menu
+from app.bot.keyboards.user import main_menu, service_copy_keyboard
 from app.bot.middlewares.admin_auth import AdminFilter
 from app.config import Settings
 from app.db.models import Order, OrderStatus, User, VPNService, VPNServiceStatus
@@ -165,6 +165,7 @@ async def admin_order_action(
                     ),
                 )
                 telegram_id = user.telegram_id
+                subscription_url = service.subscription_url
             except DuplicateApprovalError:
                 await callback.answer(_("order_not_pending"), show_alert=True)
                 return
@@ -179,7 +180,7 @@ async def admin_order_action(
                         await bot.send_message(user.telegram_id, i18n.t("approval_failed", user.language))
                 await callback.answer(_("action_failed", error=str(exc)), show_alert=True)
                 return
-        await bot.send_message(telegram_id, text)
+        await bot.send_message(telegram_id, text, reply_markup=service_copy_keyboard(_, subscription_url))
         await callback.message.edit_caption(caption=_("order_completed_admin", order_id=order_id))  # type: ignore[union-attr]
         await callback.answer()
 
