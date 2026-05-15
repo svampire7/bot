@@ -14,7 +14,7 @@ from app.config import Settings
 from app.db.repositories import get_or_create_user
 from app.services.order_service import OrderService
 from app.services.payment_service import PaymentService
-from app.utils.formatters import toman
+from app.utils.formatters import html_code, html_escape, toman
 from app.utils.validators import parse_positive_int
 
 router = Router()
@@ -37,10 +37,10 @@ async def show_payment(callback: CallbackQuery, state: FSMContext, gb: int, sess
             return
         await state.update_data(gb=gb, price=gb * price_per_gb)
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
-                 card_number=await payment.card_number(session),
-                 card_holder=settings.card_holder_name,
-                 bank=settings.bank_name,
-                 support=await payment.support_username(session))
+                 card_number=html_code(await payment.card_number(session)),
+                 card_holder=html_escape(settings.card_holder_name),
+                 bank=html_escape(settings.bank_name),
+                 support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
     await callback.message.edit_text(text, reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -86,10 +86,10 @@ async def custom_gb(
         price_per_gb = await payment.price_per_gb(session)
         await state.update_data(gb=gb, price=gb * price_per_gb)
         text = _("payment_instructions", gb=gb, price=toman(gb * price_per_gb),
-                 card_number=await payment.card_number(session),
-                 card_holder=settings.card_holder_name,
-                 bank=settings.bank_name,
-                 support=await payment.support_username(session))
+                 card_number=html_code(await payment.card_number(session)),
+                 card_holder=html_escape(settings.card_holder_name),
+                 bank=html_escape(settings.bank_name),
+                 support=html_code(await payment.support_username(session)))
     await state.set_state(BuyStates.receipt)
     await message.answer(text, reply_markup=back_to_menu_keyboard(_))
 

@@ -35,7 +35,7 @@ from app.db.repositories import (
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
-from app.utils.formatters import optional_gb, toman
+from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
 from app.utils.validators import parse_positive_int, sanitize_username
 
 router = Router()
@@ -151,8 +151,8 @@ async def admin_order_action(
                     total_gb=service.data_limit_gb,
                     used=optional_gb(service.used_traffic_gb),
                     remaining=optional_gb(service.remaining_traffic_gb),
-                    subscription_url=service.subscription_url or "-",
-                    config_links="\n".join(config_links) if config_links else i18n.t(
+                    subscription_url=html_code(service.subscription_url or "-"),
+                    config_links=html_code_lines(config_links) if config_links else i18n.t(
                         "configs_not_available", user.language
                     ),
                 )
@@ -223,7 +223,7 @@ async def search_user_message(message: Message, state: FSMContext, sessionmaker:
                          limit=service.data_limit_gb,
                          used=optional_gb(service.used_traffic_gb),
                          remaining=optional_gb(service.remaining_traffic_gb),
-                         subscription_url=service.subscription_url or "-") if service else "-"
+                         subscription_url=html_code(service.subscription_url or "-")) if service else "-"
         await message.answer(
             _("admin_search_result",
               telegram_id=user.telegram_id,
@@ -253,8 +253,8 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  price=await payment.price_per_gb(session),
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
-                 card=await payment.card_number(session),
-                 support=await payment.support_username(session))
+                 card=html_code(await payment.card_number(session)),
+                 support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
