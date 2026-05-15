@@ -11,7 +11,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-from app.bot.handlers import admin, buy, help, language, services, start
+from app.bot.handlers import admin, buy, help, language, services, start, support
 from app.bot.middlewares.i18n import I18n, I18nMiddleware
 from app.bot.middlewares.throttling import ThrottlingMiddleware
 from app.config import get_settings
@@ -42,6 +42,7 @@ async def main() -> None:
     dp.include_router(language.router)
     dp.include_router(buy.router)
     dp.include_router(services.router)
+    dp.include_router(support.router)
     dp.include_router(help.router)
 
     logging.getLogger(__name__).info("Starting bot")

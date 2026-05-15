@@ -26,9 +26,10 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("my_service"), callback_data="menu:service")
     builder.button(text=_("my_orders"), callback_data="menu:orders")
     builder.button(text=_("renew"), callback_data="menu:renew")
+    builder.button(text=_("support"), callback_data="menu:support")
     builder.button(text=_("help"), callback_data="menu:help")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2)
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 

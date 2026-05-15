@@ -15,6 +15,10 @@ class AdminUserCb(CallbackData, prefix="admuser"):
     user_id: int
 
 
+class SupportReplyCb(CallbackData, prefix="suprep"):
+    user_id: int
+
+
 def admin_dashboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for text, data in [
@@ -88,4 +92,12 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 1, 1, 1)
+    return builder.as_markup()
+
+
+def support_reply_keyboard(user_id: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("reply_to_support"), callback_data=SupportReplyCb(user_id=user_id))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
     return builder.as_markup()
