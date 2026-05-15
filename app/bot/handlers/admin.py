@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -91,11 +92,18 @@ async def show_pending(callback: CallbackQuery, sessionmaker: async_sessionmaker
                      price=toman(order.price_toman),
                      date=order.created_at.strftime("%Y-%m-%d %H:%M"))
             if order.receipt_file_id:
-                await callback.message.answer_photo(  # type: ignore[union-attr]
-                    order.receipt_file_id,
-                    caption=text,
-                    reply_markup=pending_order_keyboard(order.id, _),
-                )
+                try:
+                    await callback.message.answer_photo(  # type: ignore[union-attr]
+                        order.receipt_file_id,
+                        caption=text,
+                        reply_markup=pending_order_keyboard(order.id, _),
+                    )
+                except TelegramBadRequest:
+                    await callback.message.answer_document(  # type: ignore[union-attr]
+                        order.receipt_file_id,
+                        caption=text,
+                        reply_markup=pending_order_keyboard(order.id, _),
+                    )
             else:
                 await callback.message.edit_text(  # type: ignore[union-attr]
                     text, reply_markup=pending_order_keyboard(order.id, _)

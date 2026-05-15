@@ -113,14 +113,20 @@ async def receipt_uploaded(
     _,
 ) -> None:
     assert message.from_user
-    if not message.photo:
+    receipt_file_id = None
+    receipt_is_document = False
+    if message.photo:
+        receipt_file_id = message.photo[-1].file_id
+    elif message.document and (message.document.mime_type or "").startswith("image/"):
+        receipt_file_id = message.document.file_id
+        receipt_is_document = True
+    if not receipt_file_id:
         await message.answer(_("receipt_required"))
         return
     throttle_key = f"receipt_upload:{message.from_user.id}"
     if not await redis.set(throttle_key, "1", nx=True, ex=20):
         return
     data = await state.get_data()
-    receipt_file_id = message.photo[-1].file_id
     async with sessionmaker() as session:
         user = await get_or_create_user(
             session,
@@ -145,12 +151,20 @@ async def receipt_uploaded(
                    date=order.created_at.strftime("%Y-%m-%d %H:%M"))
     for admin_id in settings.admin_telegram_ids:
         try:
-            await bot.send_photo(
-                admin_id,
-                receipt_file_id,
-                caption=admin_text,
-                reply_markup=pending_order_keyboard(order.id, _),
-            )
+            if receipt_is_document:
+                await bot.send_document(
+                    admin_id,
+                    receipt_file_id,
+                    caption=admin_text,
+                    reply_markup=pending_order_keyboard(order.id, _),
+                )
+            else:
+                await bot.send_photo(
+                    admin_id,
+                    receipt_file_id,
+                    caption=admin_text,
+                    reply_markup=pending_order_keyboard(order.id, _),
+                )
         except Exception:
             logger.exception(
                 "Failed to notify admin about order",
