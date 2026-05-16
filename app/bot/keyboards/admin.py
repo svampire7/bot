@@ -29,10 +29,16 @@ class DiscountAdminCb(CallbackData, prefix="admdisc"):
     code: str = "-"
 
 
+class AdminWalletCb(CallbackData, prefix="admwallet"):
+    action: str
+    tx_id: int
+
+
 def admin_dashboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for text, data in [
         (_("pending_orders"), "admin:pending"),
+        (_("wallet_topups"), "admin:wallet_topups"),
         (_("search_user"), "admin:search"),
         (_("order_history"), "admin:orders"),
         (_("active_services"), "admin:services"),
@@ -46,7 +52,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -60,6 +66,15 @@ def pending_order_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
     builder.button(text=_("view_user"), callback_data=AdminOrderCb(action="view_user", order_id=order_id))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 1)
+    return builder.as_markup()
+
+
+def pending_wallet_keyboard(tx_id: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("approve"), callback_data=AdminWalletCb(action="approve", tx_id=tx_id))
+    builder.button(text=_("reject"), callback_data=AdminWalletCb(action="reject", tx_id=tx_id))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 

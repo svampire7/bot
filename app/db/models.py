@@ -35,6 +35,21 @@ class SupportTicketStatus(StrEnum):
     closed = "closed"
 
 
+class WalletTransactionStatus(StrEnum):
+    pending_admin = "pending_admin"
+    completed = "completed"
+    rejected = "rejected"
+    failed = "failed"
+
+
+class WalletTransactionType(StrEnum):
+    topup_card = "topup_card"
+    topup_ltc = "topup_ltc"
+    purchase = "purchase"
+    refund = "refund"
+    adjustment = "adjustment"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -52,6 +67,7 @@ class User(Base):
     orders: Mapped[list[Order]] = relationship(back_populates="user")
     vpn_services: Mapped[list[VPNService]] = relationship(back_populates="user")
     support_tickets: Mapped[list[SupportTicket]] = relationship(back_populates="user")
+    wallet_transactions: Mapped[list[WalletTransaction]] = relationship(back_populates="user")
 
 
 class Order(Base):
@@ -165,3 +181,25 @@ class DiscountCode(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
+    transaction_type: Mapped[str] = mapped_column(String(32), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default=WalletTransactionStatus.pending_admin.value, index=True)
+    payment_method: Mapped[str | None] = mapped_column(String(32), index=True)
+    receipt_file_id: Mapped[str | None] = mapped_column(String(512))
+    crypto_tx_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    crypto_amount: Mapped[str | None] = mapped_column(String(32))
+    admin_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped[User] = relationship(back_populates="wallet_transactions")

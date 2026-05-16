@@ -17,6 +17,8 @@ from app.db.models import (
     User,
     VPNService,
     VPNServiceStatus,
+    WalletTransaction,
+    WalletTransactionStatus,
 )
 
 
@@ -101,6 +103,50 @@ async def order_for_user(session: AsyncSession, user_id: int, order_id: int) -> 
 
 async def order_by_crypto_tx_hash(session: AsyncSession, tx_hash: str) -> Order | None:
     return await session.scalar(select(Order).where(Order.crypto_tx_hash == tx_hash))
+
+
+async def wallet_transaction_by_crypto_tx_hash(session: AsyncSession, tx_hash: str) -> WalletTransaction | None:
+    return await session.scalar(select(WalletTransaction).where(WalletTransaction.crypto_tx_hash == tx_hash))
+
+
+async def wallet_balance(session: AsyncSession, user_id: int) -> int:
+    value = await session.scalar(
+        select(func.coalesce(func.sum(WalletTransaction.amount_toman), 0)).where(
+            WalletTransaction.user_id == user_id,
+            WalletTransaction.status == WalletTransactionStatus.completed.value,
+        )
+    )
+    return int(value or 0)
+
+
+async def pending_wallet_topups(session: AsyncSession, limit: int = 10) -> list[WalletTransaction]:
+    result = await session.scalars(
+        select(WalletTransaction)
+        .options(selectinload(WalletTransaction.user))
+        .where(WalletTransaction.status == WalletTransactionStatus.pending_admin.value)
+        .order_by(WalletTransaction.created_at.asc())
+        .limit(limit)
+    )
+    return list(result)
+
+
+async def wallet_transaction_for_update(session: AsyncSession, tx_id: int) -> WalletTransaction | None:
+    return await session.scalar(
+        select(WalletTransaction)
+        .options(selectinload(WalletTransaction.user))
+        .where(WalletTransaction.id == tx_id)
+        .with_for_update()
+    )
+
+
+async def wallet_history(session: AsyncSession, user_id: int, limit: int = 10) -> list[WalletTransaction]:
+    result = await session.scalars(
+        select(WalletTransaction)
+        .where(WalletTransaction.user_id == user_id)
+        .order_by(WalletTransaction.id.desc())
+        .limit(limit)
+    )
+    return list(result)
 
 
 async def order_context(session: AsyncSession, order: Order) -> dict[str, int | str]:

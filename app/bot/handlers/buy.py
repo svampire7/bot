@@ -17,6 +17,9 @@ from app.bot.keyboards.user import (
     packages_keyboard,
     payment_method_keyboard,
     payment_keyboard,
+    service_copy_keyboard,
+    wallet_keyboard,
+    wallet_purchase_keyboard,
 )
 from app.config import Settings
 from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
@@ -30,7 +33,9 @@ from app.services.crypto_service import (
 from app.services.discount_service import apply_discount
 from app.services.order_service import OrderService
 from app.services.payment_service import PaymentService
-from app.utils.formatters import html_code, html_escape, toman
+from app.services.vpn_service import VPNProvisioningService
+from app.services.wallet_service import InsufficientWalletBalance, WalletService
+from app.utils.formatters import html_code, html_code_lines, html_escape, optional_gb, toman
 from app.utils.validators import parse_positive_int
 
 router = Router()
@@ -55,7 +60,15 @@ async def show_payment(
     package_price: int | None = None,
 ):
     payment = PaymentService(settings)
+    assert callback.from_user
     async with sessionmaker() as session:
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
         price_per_gb = await payment.price_per_gb(session)
         min_gb = await payment.min_custom_gb(session)
         max_gb = await payment.max_custom_gb(session)
@@ -63,11 +76,13 @@ async def show_payment(
             await callback.message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))  # type: ignore[union-attr]
             return
         price = package_price if package_price is not None else gb * price_per_gb
+        balance = await WalletService().balance(session, user.id)
         await state.update_data(gb=gb, price=price, original_price=price, discount_code=None, discount_amount=0)
+        await session.commit()
     await state.set_state(BuyStates.payment_method)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("payment_method_prompt", gb=gb, price=toman(price)),
-        reply_markup=payment_method_keyboard(_),
+        _("wallet_purchase_prompt", gb=gb, price=toman(price), balance=toman(balance)),
+        reply_markup=wallet_purchase_keyboard(_),
     )
     await callback.answer()
 
@@ -108,6 +123,7 @@ async def custom_package(callback: CallbackQuery, state: FSMContext, _) -> None:
 async def custom_gb(
     message: Message, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
 ) -> None:
+    assert message.from_user
     gb = parse_positive_int(message.text or "")
     payment = PaymentService(settings)
     async with sessionmaker() as session:
@@ -118,6 +134,14 @@ async def custom_gb(
             return
         price_per_gb = await payment.price_per_gb(session)
         price = gb * price_per_gb
+        user = await get_or_create_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name,
+            settings.default_language,
+        )
+        balance = await WalletService().balance(session, user.id)
         await state.update_data(
             gb=gb,
             price=price,
@@ -127,9 +151,92 @@ async def custom_gb(
         )
     await state.set_state(BuyStates.payment_method)
     await message.answer(
-        _("payment_method_prompt", gb=gb, price=toman(price)),
-        reply_markup=payment_method_keyboard(_),
+        _("wallet_purchase_prompt", gb=gb, price=toman(price), balance=toman(balance)),
+        reply_markup=wallet_purchase_keyboard(_),
     )
+
+
+@router.callback_query(F.data == "pay:wallet", BuyStates.payment_method)
+async def wallet_payment_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    i18n,
+    _,
+) -> None:
+    assert callback.from_user
+    data = await state.get_data()
+    order_id = None
+    failure_error = None
+    try:
+        async with sessionmaker.begin() as session:
+            user = await get_or_create_user(
+                session,
+                callback.from_user.id,
+                callback.from_user.username,
+                callback.from_user.first_name,
+                settings.default_language,
+            )
+            order = await OrderService(settings).create_order(
+                session,
+                user.id,
+                int(data["gb"]),
+                int(data["price"]),
+                None,
+                original_price_toman=int(data.get("original_price") or data["price"]),
+                discount_code=data.get("discount_code"),
+                discount_amount_toman=int(data.get("discount_amount") or 0),
+                payment_method="wallet",
+            )
+            order_id = order.id
+            await WalletService().spend(session, user.id, int(data["price"]), order.id)
+            try:
+                service, _created, config_links = await VPNProvisioningService(settings).approve_order(
+                    session, order.id
+                )
+            except Exception as exc:
+                failure_error = str(exc)
+                await WalletService().refund(
+                    session,
+                    user.id,
+                    int(data["price"]),
+                    order.id,
+                    note=f"Provisioning failed: {exc}",
+                )
+                text = ""
+                subscription_url = None
+            else:
+                text = i18n.t(
+                    "service_ready",
+                    user.language,
+                    purchased_gb=order.gb_amount,
+                    total_gb=service.data_limit_gb,
+                    used=optional_gb(service.used_traffic_gb),
+                    remaining=optional_gb(service.remaining_traffic_gb),
+                    subscription_url=html_code(service.subscription_url or "-"),
+                    config_links=html_code_lines(config_links)
+                    if config_links
+                    else i18n.t("configs_not_available", user.language),
+                )
+                subscription_url = service.subscription_url
+    except InsufficientWalletBalance:
+        await callback.answer(_("insufficient_wallet_balance"), show_alert=True)
+        return
+    except Exception as exc:
+        logger.exception("Wallet purchase failed", extra={"order_id": order_id})
+        await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
+        return
+    if failure_error:
+        logger.error("Wallet purchase provisioning failed", extra={"order_id": order_id, "error": failure_error})
+        await callback.answer(_("wallet_purchase_failed", error=failure_error), show_alert=True)
+        return
+    await state.clear()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        text,
+        reply_markup=service_copy_keyboard(_, subscription_url),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "pay:card", BuyStates.payment_method)
@@ -140,6 +247,10 @@ async def card_payment_selected(
     settings: Settings,
     _,
 ) -> None:
+    await state.clear()
+    await callback.message.edit_text(_("wallet_required_payment"), reply_markup=wallet_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+    return
     data = await state.get_data()
     payment = PaymentService(settings)
     async with sessionmaker() as session:
@@ -165,6 +276,10 @@ async def crypto_payment_selected(
     settings: Settings,
     _,
 ) -> None:
+    await state.clear()
+    await callback.message.edit_text(_("wallet_required_payment"), reply_markup=wallet_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+    return
     data = await state.get_data()
     payment = PaymentService(settings)
     async with sessionmaker() as session:
@@ -216,13 +331,28 @@ async def discount_code_entered(
         discount, amount, final_price = await apply_discount(session, code, original_price)
     if not discount:
         await state.set_state(BuyStates.payment_method)
-        await message.answer(_("discount_invalid"), reply_markup=payment_method_keyboard(_))
+        await message.answer(_("discount_invalid"), reply_markup=wallet_purchase_keyboard(_))
         return
     await state.update_data(price=final_price, discount_code=discount.code, discount_amount=amount)
     await state.set_state(BuyStates.payment_method)
+    assert message.from_user
+    async with sessionmaker() as session:
+        user = await get_or_create_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name,
+            settings.default_language,
+        )
+        balance = await WalletService().balance(session, user.id)
+        await session.commit()
     await message.answer(
         _("discount_applied", code=discount.code, discount=toman(amount), price=toman(final_price)),
-        reply_markup=payment_method_keyboard(_, allow_discount=False),
+        reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
+    )
+    await message.answer(
+        _("wallet_purchase_prompt", gb=int(data["gb"]), price=toman(final_price), balance=toman(balance)),
+        reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
     )
 
 

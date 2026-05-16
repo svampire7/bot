@@ -1,3 +1,3 @@
-from app.bot.handlers import admin, buy, help, language, services, start, support
+from app.bot.handlers import admin, buy, help, language, services, start, support, wallet
 
-__all__ = ["admin", "buy", "help", "language", "services", "start", "support"]
+__all__ = ["admin", "buy", "help", "language", "services", "start", "support", "wallet"]

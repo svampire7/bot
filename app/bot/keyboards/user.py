@@ -29,12 +29,13 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("buy_vpn"), callback_data="menu:buy")
     builder.button(text=_("my_service"), callback_data="menu:service")
+    builder.button(text=_("wallet"), callback_data="menu:wallet")
     builder.button(text=_("my_orders"), callback_data="menu:orders")
     builder.button(text=_("renew"), callback_data="menu:renew")
     builder.button(text=_("support"), callback_data="menu:support")
     builder.button(text=_("help"), callback_data="menu:help")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2)
     return builder.as_markup()
 
 
@@ -75,6 +76,44 @@ def payment_method_keyboard(_, allow_discount: bool = True) -> InlineKeyboardMar
         builder.button(text=_("apply_discount"), callback_data="pay:discount")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def wallet_purchase_keyboard(_, allow_discount: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("pay_from_wallet"), callback_data="pay:wallet")
+    builder.button(text=_("topup_wallet"), callback_data="menu:wallet")
+    if allow_discount:
+        builder.button(text=_("apply_discount"), callback_data="pay:discount")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def wallet_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("topup_card"), callback_data="wallet:topup:card")
+    builder.button(text=_("topup_ltc"), callback_data="wallet:topup:ltc")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def wallet_card_keyboard(_, card_number: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if card_number:
+        builder.button(text=_("copy_card_number"), copy_text=CopyTextButton(text=card_number))
+    builder.button(text=_("back"), callback_data="menu:wallet")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def wallet_crypto_keyboard(_, wallet: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if wallet:
+        builder.button(text=_("copy_crypto_wallet"), copy_text=CopyTextButton(text=wallet))
+    builder.button(text=_("back"), callback_data="menu:wallet")
+    builder.adjust(1)
     return builder.as_markup()
 
 

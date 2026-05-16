@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.bot.keyboards.admin import (
     AdminOrderCb,
     AdminUserCb,
+    AdminWalletCb,
     DiscountAdminCb,
     PackageAdminCb,
     admin_dashboard,
@@ -23,13 +24,22 @@ from app.bot.keyboards.admin import (
     order_recovery_keyboard,
     package_editor_keyboard,
     pending_order_keyboard,
+    pending_wallet_keyboard,
     settings_keyboard,
     user_actions,
 )
 from app.bot.keyboards.user import main_menu, service_copy_keyboard
 from app.bot.middlewares.admin_auth import AdminFilter
 from app.config import Settings
-from app.db.models import DiscountCode, Order, OrderStatus, User, VPNService, VPNServiceStatus
+from app.db.models import (
+    DiscountCode,
+    Order,
+    OrderStatus,
+    User,
+    VPNService,
+    VPNServiceStatus,
+    WalletTransactionStatus,
+)
 from app.db.repositories import (
     active_service_for_user,
     get_discount_code,
@@ -37,10 +47,12 @@ from app.db.repositories import (
     order_context,
     order_with_user_for_update,
     pending_orders,
+    pending_wallet_topups,
     search_user,
     set_setting,
     stats,
     user_order_history,
+    wallet_transaction_for_update,
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
@@ -136,6 +148,91 @@ async def show_pending(callback: CallbackQuery, sessionmaker: async_sessionmaker
                 await callback.message.edit_text(  # type: ignore[union-attr]
                     text, reply_markup=pending_order_keyboard(order.id, _)
                 )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:wallet_topups")
+async def show_pending_wallet_topups(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    async with sessionmaker() as session:
+        topups = await pending_wallet_topups(session, limit=1)
+        if not topups:
+            await callback.message.edit_text(_("no_pending_wallet_topups"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        else:
+            tx = topups[0]
+            text = _(
+                "wallet_topup_admin",
+                id=tx.id,
+                username=tx.user.telegram_username or "-",
+                telegram_id=tx.user.telegram_id,
+                amount=toman(tx.amount_toman),
+            )
+            if tx.receipt_file_id:
+                try:
+                    await callback.message.answer_photo(  # type: ignore[union-attr]
+                        tx.receipt_file_id,
+                        caption=text,
+                        reply_markup=pending_wallet_keyboard(tx.id, _),
+                    )
+                except TelegramBadRequest:
+                    await callback.message.answer_document(  # type: ignore[union-attr]
+                        tx.receipt_file_id,
+                        caption=text,
+                        reply_markup=pending_wallet_keyboard(tx.id, _),
+                    )
+            else:
+                await callback.message.edit_text(text, reply_markup=pending_wallet_keyboard(tx.id, _))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(AdminWalletCb.filter())
+async def admin_wallet_action(
+    callback: CallbackQuery,
+    callback_data: AdminWalletCb,
+    sessionmaker: async_sessionmaker,
+    bot,
+    i18n,
+    _,
+) -> None:
+    assert callback.from_user
+    async with sessionmaker.begin() as session:
+        tx = await wallet_transaction_for_update(session, callback_data.tx_id)
+        if not tx:
+            await callback.answer(_("wallet_tx_not_found"), show_alert=True)
+            return
+        if tx.status != WalletTransactionStatus.pending_admin.value:
+            await callback.answer(_("wallet_tx_not_pending"), show_alert=True)
+            return
+        user_lang = tx.user.language
+        if callback_data.action == "approve":
+            tx.status = WalletTransactionStatus.completed.value
+            await log_admin_action(
+                session,
+                callback.from_user.id,
+                "approve_wallet_topup",
+                details=f"{tx.id}:{tx.amount_toman}",
+            )
+            user_message = i18n.t(
+                "wallet_topup_approved",
+                user_lang,
+                amount=toman(tx.amount_toman),
+            )
+            admin_message = _("wallet_topup_approved_admin", tx_id=tx.id)
+        else:
+            tx.status = WalletTransactionStatus.rejected.value
+            await log_admin_action(
+                session,
+                callback.from_user.id,
+                "reject_wallet_topup",
+                details=f"{tx.id}:{tx.amount_toman}",
+            )
+            user_message = i18n.t("wallet_topup_rejected", user_lang)
+            admin_message = _("wallet_topup_rejected_admin", tx_id=tx.id)
+        telegram_id = tx.user.telegram_id
+    await bot.send_message(telegram_id, user_message)
+    try:
+        await callback.message.edit_caption(caption=admin_message)  # type: ignore[union-attr]
+    except TelegramBadRequest:
+        await callback.message.edit_text(admin_message, reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
