@@ -55,6 +55,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("search_user"), "admin:search"),
         (_("order_history"), "admin:orders"),
         (_("active_services"), "admin:services"),
+        (_("bulk_create"), "admin:bulk"),
         (_("add_traffic"), "admin:addtraffic"),
         (_("wallet_adjust"), "admin:walletadjust"),
         (_("disable_user"), "admin:disable"),
@@ -66,7 +67,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 

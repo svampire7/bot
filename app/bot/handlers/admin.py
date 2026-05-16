@@ -7,7 +7,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -67,6 +67,7 @@ from app.db.repositories import (
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
+from app.services.bulk_service import BulkPlanError, BulkService, parse_bulk_plan
 from app.services.discount_service import parse_discount_definition
 from app.services.payment_service import PaymentService, format_package_prices, parse_package_prices
 from app.services.referral_service import notify_referrer_about_reward
@@ -92,6 +93,8 @@ class AdminStates(StatesGroup):
     wallet_adjust_query = State()
     wallet_adjust_amount = State()
     wallet_adjust_note = State()
+    bulk_name = State()
+    bulk_plan = State()
 
 
 def register_admin_filter(settings: Settings) -> None:
@@ -447,6 +450,78 @@ async def ask_wallet_adjust_user(callback: CallbackQuery, state: FSMContext, _) 
     await state.set_state(AdminStates.wallet_adjust_query)
     await callback.message.edit_text(_("enter_wallet_adjust_user"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin:bulk")
+async def ask_bulk_name(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.set_state(AdminStates.bulk_name)
+    await callback.message.edit_text(_("bulk_enter_name"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(AdminStates.bulk_name)
+async def bulk_name_entered(message: Message, state: FSMContext, _) -> None:
+    name = " ".join((message.text or "").strip().split())
+    if len(name) < 2:
+        await message.answer(_("bulk_invalid_name"), reply_markup=admin_back_keyboard(_))
+        return
+    await state.update_data(bulk_name=name[:128])
+    await state.set_state(AdminStates.bulk_plan)
+    await message.answer(_("bulk_enter_plan"), reply_markup=admin_back_keyboard(_))
+
+
+@router.message(AdminStates.bulk_plan)
+async def bulk_plan_entered(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    _,
+) -> None:
+    assert message.from_user
+    try:
+        plan = parse_bulk_plan(message.text or "")
+    except BulkPlanError as exc:
+        await message.answer(_("bulk_invalid_plan", error=str(exc)), reply_markup=admin_back_keyboard(_))
+        return
+    data = await state.get_data()
+    await message.answer(_("bulk_creating", count=sum(item.quantity for item in plan)))
+    try:
+        async with sessionmaker.begin() as session:
+            result = await BulkService(settings).create_batch(
+                session,
+                name=str(data["bulk_name"]),
+                plan=plan,
+                admin_telegram_id=message.from_user.id,
+            )
+            await log_admin_action(
+                session,
+                message.from_user.id,
+                "bulk_create",
+                details=f"{result.batch.id}:{result.batch.name}:{result.batch.total_accounts}",
+            )
+    except Exception as exc:
+        await message.answer(_("bulk_failed", error=str(exc)), reply_markup=admin_dashboard(_))
+        await state.clear()
+        return
+
+    await state.clear()
+    filename_base = f"bulk_{result.batch.id}_{sanitize_username(result.batch.name) or 'batch'}"
+    await message.answer(
+        _("bulk_done",
+          batch_id=result.batch.id,
+          name=result.batch.name,
+          count=result.batch.total_accounts,
+          total_gb=result.batch.total_gb,
+          status=result.batch.status),
+        reply_markup=admin_dashboard(_),
+    )
+    await message.answer_document(
+        BufferedInputFile(result.txt.encode("utf-8"), filename=f"{filename_base}.txt")
+    )
+    await message.answer_document(
+        BufferedInputFile(result.csv.encode("utf-8"), filename=f"{filename_base}.csv")
+    )
 
 
 @router.callback_query(WalletAdjustCb.filter())

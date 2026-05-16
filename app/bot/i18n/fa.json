@@ -111,6 +111,7 @@
   "search_user": "‏جستجو",
   "order_history": "‏تاریخچه",
   "active_services": "‏سرویس‌ها",
+  "bulk_create": "‏ساخت گروهی",
   "wallet_adjust": "‏اصلاح کیف پول",
   "add_traffic": "‏افزودن حجم",
   "disable_user": "‏قطع سرویس",
@@ -238,5 +239,12 @@
   "enter_wallet_adjust_amount": "موجودی فعلی کیف پول: {balance} تومان\nمبلغ اصلاح را به تومان وارد کنید. برای کسر، عدد منفی بفرستید.",
   "enter_wallet_adjust_note": "دلیل یا یادداشت این اصلاح کیف پول را ارسال کنید.",
   "wallet_adjust_done": "اصلاح کیف پول ذخیره شد.",
+  "bulk_enter_name": "یک نام برای این بچ فروشنده وارد کنید.\nمثال: فروشگاه رضا اردیبهشت ۱۴۰۵",
+  "bulk_invalid_name": "نام بچ خیلی کوتاه است. لطفا یک نام واضح ارسال کنید.",
+  "bulk_enter_plan": "پلن ساخت گروهی را بفرستید، هر بسته در یک خط.\nمثال:\n2x5\n5x10\n10 1\n\nعدد اول تعداد اکانت است، عدد دوم حجم GB.",
+  "bulk_invalid_plan": "پلن ساخت گروهی معتبر نیست: {error}\nلطفا خط‌ها را مثل 2x5 یا 5 10 ارسال کنید.",
+  "bulk_creating": "در حال ساخت {count} اکانت در مرزبان. کمی زمان می‌برد.",
+  "bulk_done": "بچ گروهی ساخته شد.\nبچ #{batch_id}: {name}\nتعداد اکانت: {count}\nحجم کل: {total_gb} GB\nوضعیت: {status}\n\nفایل‌های TXT و CSV در ادامه ارسال شدند.",
+  "bulk_failed": "ساخت گروهی ناموفق بود: {error}",
   "stats_text": "کل کاربران: {total_users}\nسرویس‌های فعال: {active_services}\nکاربران بدون سرویس: {no_service_users}\nسفارش‌های تکمیل‌شده: {completed_orders}\nسفارش‌های در انتظار: {pending_orders}\nشارژهای تکمیل‌شده: {completed_topups}\nخریدهای کیف پول: {wallet_purchases}\nخریدهای دعوتی: {referral_purchases}\nدرآمد کل: {total_revenue} تومان\nحجم فروخته‌شده: {sold_gb} GB\nدرآمد امروز: {today_revenue} تومان\nدرآمد این ماه: {month_revenue} تومان"
 }

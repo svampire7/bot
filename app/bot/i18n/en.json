@@ -111,6 +111,7 @@
   "search_user": "Search",
   "order_history": "History",
   "active_services": "Services",
+  "bulk_create": "Bulk Create",
   "wallet_adjust": "Wallet Adjust",
   "add_traffic": "Add Traffic",
   "disable_user": "Disable",
@@ -238,5 +239,12 @@
   "enter_wallet_adjust_amount": "Current wallet balance: {balance} Toman\nEnter adjustment amount in Toman. Use negative numbers to subtract.",
   "enter_wallet_adjust_note": "Send the reason/note for this wallet adjustment.",
   "wallet_adjust_done": "Wallet adjustment saved.",
+  "bulk_enter_name": "Send a name for this reseller batch.\nExample: Reza Shop May 2026",
+  "bulk_invalid_name": "Batch name is too short. Please send a clear name.",
+  "bulk_enter_plan": "Send the bulk plan, one line per package.\nExamples:\n2x5\n5x10\n10 1\n\nThe first number is quantity, the second number is GB.",
+  "bulk_invalid_plan": "Invalid bulk plan: {error}\nPlease send lines like 2x5 or 5 10.",
+  "bulk_creating": "Creating {count} Marzban accounts. This may take a moment.",
+  "bulk_done": "Bulk batch created.\nBatch #{batch_id}: {name}\nAccounts: {count}\nTotal traffic: {total_gb} GB\nStatus: {status}\n\nTXT and CSV exports are attached below.",
+  "bulk_failed": "Bulk creation failed: {error}",
   "stats_text": "Total users: {total_users}\nActive VPN users: {active_services}\nUsers without service: {no_service_users}\nCompleted orders: {completed_orders}\nPending orders: {pending_orders}\nCompleted top-ups: {completed_topups}\nWallet purchases: {wallet_purchases}\nReferral purchases: {referral_purchases}\nTotal revenue: {total_revenue} Toman\nTotal sold GB: {sold_gb}\nToday revenue: {today_revenue} Toman\nThis month revenue: {month_revenue} Toman"
 }

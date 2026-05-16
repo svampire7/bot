@@ -57,6 +57,12 @@ class CryptoPaymentQuoteStatus(StrEnum):
     failed = "failed"
 
 
+class BulkBatchStatus(StrEnum):
+    completed = "completed"
+    failed = "failed"
+    partial = "partial"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -141,6 +147,37 @@ class AdminActionLog(Base):
     action: Mapped[str] = mapped_column(String(64), index=True)
     details: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BulkBatch(Base):
+    __tablename__ = "bulk_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    admin_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    total_accounts: Mapped[int] = mapped_column(Integer, default=0)
+    total_gb: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default=BulkBatchStatus.completed.value, index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    accounts: Mapped[list[BulkAccount]] = relationship(back_populates="batch")
+
+
+class BulkAccount(Base):
+    __tablename__ = "bulk_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("bulk_batches.id"), index=True)
+    marzban_username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    gb_amount: Mapped[int] = mapped_column(Integer)
+    subscription_url: Mapped[str | None] = mapped_column(Text)
+    config_links_json: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default=VPNServiceStatus.active.value, index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    batch: Mapped[BulkBatch] = relationship(back_populates="accounts")
 
 
 class BotSetting(Base):
