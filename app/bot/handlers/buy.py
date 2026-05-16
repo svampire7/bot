@@ -88,7 +88,10 @@ async def show_payment(
 
 
 @router.callback_query(F.data.in_({"menu:buy", "menu:renew"}))
-async def buy_menu(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
+async def buy_menu(
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
+) -> None:
+    await state.clear()
     async with sessionmaker() as session:
         packages = await PaymentService(settings).package_prices(session)
     await callback.message.edit_text(_("select_package"), reply_markup=packages_keyboard(_, packages))  # type: ignore[union-attr]
@@ -312,7 +315,7 @@ async def crypto_payment_selected(
 @router.callback_query(F.data == "pay:discount", BuyStates.payment_method)
 async def ask_discount_code(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(BuyStates.discount_code)
-    await callback.message.answer(_("enter_discount_code"))  # type: ignore[union-attr]
+    await callback.message.answer(_("enter_discount_code"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 

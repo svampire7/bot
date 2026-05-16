@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -28,8 +30,9 @@ async def start(message: Message, sessionmaker: async_sessionmaker, settings: Se
 
 
 @router.message(Command("menu"))
-async def menu(message: Message, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
+async def menu(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
     assert message.from_user
+    await state.clear()
     async with sessionmaker() as session:
         await get_or_create_user(
             session,
@@ -49,6 +52,10 @@ async def show_telegram_id(message: Message, _) -> None:
 
 
 @router.callback_query(F.data == "menu:main")
-async def show_main_menu(callback: CallbackQuery, _) -> None:
-    await callback.message.edit_text(_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
+async def show_main_menu(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.clear()
+    try:
+        await callback.message.edit_text(_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
+    except TelegramBadRequest:
+        await callback.message.edit_caption(caption=_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
     await callback.answer()

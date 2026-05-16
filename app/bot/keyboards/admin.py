@@ -78,6 +78,12 @@ def pending_wallet_keyboard(tx_id: int, _) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def admin_back_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    return builder.as_markup()
+
+
 def order_recovery_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("retry_order"), callback_data=AdminOrderCb(action="retry", order_id=order_id))

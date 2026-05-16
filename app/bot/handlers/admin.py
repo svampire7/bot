@@ -17,6 +17,7 @@ from app.bot.keyboards.admin import (
     AdminWalletCb,
     DiscountAdminCb,
     PackageAdminCb,
+    admin_back_keyboard,
     admin_dashboard,
     confirm_broadcast,
     confirm_delete_keyboard,
@@ -89,8 +90,12 @@ async def admin_entry(message: Message, _) -> None:
 
 
 @router.callback_query(F.data == "admin:dashboard")
-async def admin_home(callback: CallbackQuery, _) -> None:
-    await callback.message.edit_text(_("admin_dashboard"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+async def admin_home(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.clear()
+    try:
+        await callback.message.edit_text(_("admin_dashboard"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+    except TelegramBadRequest:
+        await callback.message.edit_caption(caption=_("admin_dashboard"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -378,7 +383,7 @@ async def show_user_profile(callback: CallbackQuery, session, user_id: int, _) -
 @router.callback_query(F.data.in_({"admin:search", "admin:orders"}))
 async def ask_search(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(AdminStates.search)
-    await callback.message.edit_text(_("enter_search_query"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_search_query"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -484,7 +489,7 @@ async def ask_setting_value(callback: CallbackQuery, state: FSMContext, _) -> No
     key = (callback.data or "").split(":", 2)[-1]
     await state.update_data(setting_key=key)
     await state.set_state(AdminStates.setting_value)
-    await callback.message.edit_text(_("enter_setting_value"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_setting_value"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -493,7 +498,7 @@ async def ask_qr_value(callback: CallbackQuery, state: FSMContext, _) -> None:
     key = (callback.data or "").split(":", 2)[-1]
     await state.update_data(setting_key=key)
     await state.set_state(AdminStates.qr_value)
-    await callback.message.edit_text(_("send_qr_image"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("send_qr_image"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -583,7 +588,7 @@ async def package_editor_action(
     await state.update_data(package_action=callback_data.action, package_gb=callback_data.gb)
     await state.set_state(AdminStates.package_value)
     prompt = _("enter_package_price", gb=callback_data.gb) if callback_data.action == "edit" else _("enter_package_definition")
-    await callback.message.edit_text(prompt)  # type: ignore[union-attr]
+    await callback.message.edit_text(prompt, reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -659,7 +664,7 @@ async def discount_action(
         await callback.answer()
         return
     await state.set_state(AdminStates.discount_value)
-    await callback.message.edit_text(_("enter_discount_definition"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_discount_definition"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -704,7 +709,7 @@ async def active_services(callback: CallbackQuery, sessionmaker: async_sessionma
 @router.callback_query(F.data == "admin:broadcast")
 async def ask_broadcast(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(AdminStates.broadcast)
-    await callback.message.edit_text(_("enter_broadcast"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_broadcast"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -742,7 +747,7 @@ async def ask_service_username(callback: CallbackQuery, state: FSMContext, _) ->
     action = (callback.data or "").split(":")[-1]
     await state.update_data(service_action=action)
     await state.set_state(AdminStates.service_username)
-    await callback.message.edit_text(_("enter_marzban_username"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_marzban_username"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -756,7 +761,7 @@ async def service_username_step(
     if action == "addtraffic":
         await state.update_data(marzban_username=username)
         await state.set_state(AdminStates.add_traffic_gb)
-        await message.answer(_("enter_gb_amount"))
+        await message.answer(_("enter_gb_amount"), reply_markup=admin_back_keyboard(_))
         return
     if action == "delete":
         await state.update_data(marzban_username=username)
@@ -846,15 +851,15 @@ async def user_action_button(
     if callback_data.action == "addtraffic":
         await state.update_data(service_action="addtraffic", marzban_username=service.marzban_username if service else "")
         await state.set_state(AdminStates.add_traffic_gb)
-        await callback.message.answer(_("enter_gb_amount"))  # type: ignore[union-attr]
+        await callback.message.answer(_("enter_gb_amount"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     elif callback_data.action == "newservice":
         await state.update_data(create_new_user_id=callback_data.user_id)
         await state.set_state(AdminStates.create_new_gb)
-        await callback.message.answer(_("enter_new_service_gb"))  # type: ignore[union-attr]
+        await callback.message.answer(_("enter_new_service_gb"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     else:
         await state.update_data(service_action=callback_data.action)
         await state.set_state(AdminStates.service_username)
-        await callback.message.answer(_("enter_marzban_username"))  # type: ignore[union-attr]
+        await callback.message.answer(_("enter_marzban_username"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 

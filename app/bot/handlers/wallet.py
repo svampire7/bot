@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.admin import pending_wallet_keyboard
 from app.bot.keyboards.user import (
+    back_to_menu_keyboard,
     main_menu,
     wallet_card_keyboard,
     wallet_crypto_keyboard,
@@ -63,8 +64,11 @@ def wallet_history_text(_, rows) -> str:
 
 
 @router.callback_query(F.data == "menu:wallet")
-async def wallet_menu(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
+async def wallet_menu(
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
+) -> None:
     assert callback.from_user
+    await state.clear()
     async with sessionmaker() as session:
         user = await get_or_create_user(
             session,
@@ -89,7 +93,7 @@ async def ask_wallet_amount(callback: CallbackQuery, state: FSMContext, _) -> No
     method = "card" if callback.data == "wallet:topup:card" else "crypto_ltc"
     await state.update_data(wallet_payment_method=method)
     await state.set_state(WalletStates.amount)
-    await callback.message.edit_text(_("enter_topup_amount"))  # type: ignore[union-attr]
+    await callback.message.edit_text(_("enter_topup_amount"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 

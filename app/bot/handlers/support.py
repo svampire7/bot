@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.keyboards.admin import SupportReplyCb, admin_dashboard, support_reply_keyboard
+from app.bot.keyboards.admin import SupportReplyCb, admin_back_keyboard, admin_dashboard, support_reply_keyboard
 from app.bot.keyboards.user import back_to_menu_keyboard, main_menu
 from app.config import Settings
 from app.db.models import User
@@ -107,7 +107,7 @@ async def ask_support_reply(
         await callback.message.answer(_("support_history_title") + "\n" + "\n".join(lines))  # type: ignore[union-attr]
     await state.update_data(support_user_id=user.id, support_telegram_id=user.telegram_id)
     await state.set_state(AdminSupportStates.reply)
-    await callback.message.answer(_("support_reply_prompt"))  # type: ignore[union-attr]
+    await callback.message.answer(_("support_reply_prompt"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
 
 
