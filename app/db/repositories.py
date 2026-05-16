@@ -49,6 +49,16 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
     return await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
+async def set_referrer_if_allowed(session: AsyncSession, user: User, referrer_telegram_id: int) -> bool:
+    if user.referred_by_user_id or user.telegram_id == referrer_telegram_id:
+        return False
+    referrer = await get_user_by_telegram_id(session, referrer_telegram_id)
+    if not referrer or referrer.id == user.id:
+        return False
+    user.referred_by_user_id = referrer.id
+    return True
+
+
 async def search_user(session: AsyncSession, query: str) -> User | None:
     clauses = [User.telegram_username.ilike(query.lstrip("@"))]
     if query.isdigit():

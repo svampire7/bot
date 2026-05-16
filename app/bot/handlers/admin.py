@@ -59,6 +59,7 @@ from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
 from app.services.discount_service import parse_discount_definition
 from app.services.payment_service import PaymentService, format_package_prices, parse_package_prices
+from app.services.referral_service import notify_referrer_about_reward
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
 from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
 from app.utils.validators import parse_positive_int, sanitize_username
@@ -313,7 +314,7 @@ async def admin_order_action(
     if callback_data.action in {"approve", "retry"}:
         async with sessionmaker.begin() as session:
             try:
-                service, _created, config_links = await VPNProvisioningService(
+                service, _created, config_links, referral_reward = await VPNProvisioningService(
                     settings
                 ).approve_order(session, order_id)
                 order = await session.get(Order, order_id)
@@ -333,6 +334,18 @@ async def admin_order_action(
                         "configs_not_available", user.language
                     ),
                 )
+                if referral_reward.referred_bonus_gb:
+                    text += "\n\n" + i18n.t(
+                        "referral_friend_bonus_applied",
+                        user.language,
+                        bonus_gb=referral_reward.referred_bonus_gb,
+                    )
+                if referral_reward.pending_bonus_gb:
+                    text += "\n" + i18n.t(
+                        "referral_pending_bonus_applied",
+                        user.language,
+                        bonus_gb=referral_reward.pending_bonus_gb,
+                    )
                 telegram_id = user.telegram_id
                 subscription_url = service.subscription_url
             except DuplicateApprovalError:
@@ -350,6 +363,7 @@ async def admin_order_action(
                 await callback.answer(_("action_failed", error=str(exc)), show_alert=True)
                 return
         await bot.send_message(telegram_id, text, reply_markup=service_copy_keyboard(_, subscription_url))
+        await notify_referrer_about_reward(bot, i18n, referral_reward)
         try:
             await callback.message.edit_caption(caption=_("order_completed_admin", order_id=order_id))  # type: ignore[union-attr]
         except TelegramBadRequest:
@@ -479,6 +493,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  crypto_wallet=html_code(await payment.crypto_ltc_wallet(session)),
                  crypto_qr=_("configured") if await payment.crypto_ltc_qr_file_id(session) else "-",
                  ltc_rate=await payment.ltc_toman_rate(session),
+                 referral_bonus=await payment.referral_bonus_gb(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -534,7 +549,13 @@ async def save_setting_value(
     data = await state.get_data()
     key = data["setting_key"]
     value = (message.text or "").strip()
-    numeric_keys = {"price_per_gb_toman", "min_custom_gb", "max_custom_gb", "ltc_toman_rate"}
+    numeric_keys = {
+        "price_per_gb_toman",
+        "min_custom_gb",
+        "max_custom_gb",
+        "ltc_toman_rate",
+        "referral_bonus_gb",
+    }
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))
         return

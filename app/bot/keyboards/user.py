@@ -34,8 +34,9 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("renew"), callback_data="menu:renew")
     builder.button(text=_("support"), callback_data="menu:support")
     builder.button(text=_("help"), callback_data="menu:help")
+    builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -54,6 +55,14 @@ def packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarku
 def back_to_menu_keyboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    return builder.as_markup()
+
+
+def invite_keyboard(_, invite_link: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("copy_invite_link"), copy_text=CopyTextButton(text=invite_link))
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()
 
 

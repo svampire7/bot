@@ -33,6 +33,7 @@ from app.services.crypto_service import (
 from app.services.discount_service import apply_discount
 from app.services.order_service import OrderService
 from app.services.payment_service import PaymentService
+from app.services.referral_service import notify_referrer_about_reward
 from app.services.vpn_service import VPNProvisioningService
 from app.services.wallet_service import InsufficientWalletBalance, WalletService
 from app.utils.formatters import html_code, html_code_lines, html_escape, optional_gb, toman
@@ -165,6 +166,7 @@ async def wallet_payment_selected(
     state: FSMContext,
     sessionmaker: async_sessionmaker,
     settings: Settings,
+    bot,
     i18n,
     _,
 ) -> None:
@@ -195,7 +197,7 @@ async def wallet_payment_selected(
             order_id = order.id
             await WalletService().spend(session, user.id, int(data["price"]), order.id)
             try:
-                service, _created, config_links = await VPNProvisioningService(settings).approve_order(
+                service, _created, config_links, referral_reward = await VPNProvisioningService(settings).approve_order(
                     session, order.id
                 )
             except Exception as exc:
@@ -234,11 +236,16 @@ async def wallet_payment_selected(
         logger.error("Wallet purchase provisioning failed", extra={"order_id": order_id, "error": failure_error})
         await callback.answer(_("wallet_purchase_failed", error=failure_error), show_alert=True)
         return
+    if referral_reward.referred_bonus_gb:
+        text += "\n\n" + _("referral_friend_bonus_applied", bonus_gb=referral_reward.referred_bonus_gb)
+    if referral_reward.pending_bonus_gb:
+        text += "\n" + _("referral_pending_bonus_applied", bonus_gb=referral_reward.pending_bonus_gb)
     await state.clear()
     await callback.message.edit_text(  # type: ignore[union-attr]
         text,
         reply_markup=service_copy_keyboard(_, subscription_url),
     )
+    await notify_referrer_about_reward(bot, i18n, referral_reward)
     await callback.answer()
 
 

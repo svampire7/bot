@@ -59,6 +59,9 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(255))
     language: Mapped[str] = mapped_column(String(8), default="fa")
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    referred_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    referral_bonus_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
+    pending_referral_bonus_gb: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -68,6 +71,7 @@ class User(Base):
     vpn_services: Mapped[list[VPNService]] = relationship(back_populates="user")
     support_tickets: Mapped[list[SupportTicket]] = relationship(back_populates="user")
     wallet_transactions: Mapped[list[WalletTransaction]] = relationship(back_populates="user")
+    referred_by: Mapped[User | None] = relationship(remote_side=[id])
 
 
 class Order(Base):

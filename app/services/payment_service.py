@@ -68,3 +68,6 @@ class PaymentService:
 
     async def max_custom_gb(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "max_custom_gb", str(self.settings.max_custom_gb)))
+
+    async def referral_bonus_gb(self, session: AsyncSession) -> int:
+        return int(await get_setting(session, "referral_bonus_gb", "2"))
