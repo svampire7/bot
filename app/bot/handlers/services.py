@@ -53,7 +53,7 @@ async def my_service(callback: CallbackQuery, sessionmaker: async_sessionmaker, 
             await callback.message.edit_text(  # type: ignore[union-attr]
                 _("service_info",
                   username=service.marzban_username,
-                  total_gb=service.data_limit_gb,
+                  total_gb=optional_gb(service.data_limit_gb),
                   used=optional_gb(service.used_traffic_gb),
                   remaining=optional_gb(service.remaining_traffic_gb),
                   subscription_url=html_code(service.subscription_url or "-"))

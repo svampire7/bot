@@ -6,7 +6,7 @@ from html import escape
 GB = 1024**3
 
 
-def gb_to_bytes(gb: int) -> int:
+def gb_to_bytes(gb: int | float) -> int:
     return int(gb * GB)
 
 

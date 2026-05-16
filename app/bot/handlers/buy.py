@@ -216,7 +216,7 @@ async def wallet_payment_selected(
                     "service_ready",
                     user.language,
                     purchased_gb=order.gb_amount,
-                    total_gb=service.data_limit_gb,
+                    total_gb=optional_gb(service.data_limit_gb),
                     used=optional_gb(service.used_traffic_gb),
                     remaining=optional_gb(service.remaining_traffic_gb),
                     subscription_url=html_code(service.subscription_url or "-"),

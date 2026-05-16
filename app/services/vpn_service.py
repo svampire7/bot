@@ -61,6 +61,8 @@ class VPNProvisioningService:
                         config_links = updated.links
                         service.data_limit_gb += order.gb_amount
                         service.low_traffic_alert_sent = False
+                        service.is_trial = False
+                        service.trial_expire_at = None
                     else:
                         service.status = VPNServiceStatus.deleted.value
                         service = None
@@ -74,6 +76,7 @@ class VPNProvisioningService:
                         subscription_url=marzban.get_subscription_url(username, created),
                         data_limit_gb=order.gb_amount,
                         status=VPNServiceStatus.active.value,
+                        is_trial=False,
                     )
                     session.add(service)
                     created_new = True
@@ -163,5 +166,5 @@ class VPNProvisioningService:
             service.used_traffic_gb = bytes_to_gb(usage.used_traffic)
             service.remaining_traffic_gb = bytes_to_gb(usage.remaining_traffic)
             if usage.data_limit is not None:
-                service.data_limit_gb = int(bytes_to_gb(usage.data_limit) or service.data_limit_gb)
+                service.data_limit_gb = bytes_to_gb(usage.data_limit) or service.data_limit_gb
         return service

@@ -11,12 +11,25 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from redis.asyncio import Redis
 
-from app.bot.handlers import admin, buy, help, language, services, start, support, wallet
+from app.bot.handlers import admin, buy, help, language, services, start, support, trial, wallet
 from app.bot.middlewares.i18n import I18n, I18nMiddleware
 from app.bot.middlewares.throttling import ThrottlingMiddleware
 from app.config import get_settings
 from app.db.session import SessionLocal, engine
+from app.services.trial_service import TrialService
 from app.utils.logging import setup_logging
+
+
+async def trial_cleanup_loop(settings) -> None:
+    service = TrialService(settings)
+    while True:
+        try:
+            expired = await service.cleanup_expired_trials(SessionLocal)
+            if expired:
+                logging.getLogger(__name__).info("Expired trial services", extra={"count": expired})
+        except Exception:
+            logging.getLogger(__name__).exception("Trial cleanup failed")
+        await asyncio.sleep(300)
 
 
 async def main() -> None:
@@ -42,11 +55,13 @@ async def main() -> None:
     dp.include_router(language.router)
     dp.include_router(buy.router)
     dp.include_router(wallet.router)
+    dp.include_router(trial.router)
     dp.include_router(services.router)
     dp.include_router(support.router)
     dp.include_router(help.router)
 
     logging.getLogger(__name__).info("Starting bot")
+    cleanup_task = asyncio.create_task(trial_cleanup_loop(settings))
     try:
         await dp.start_polling(
             bot,
@@ -56,6 +71,7 @@ async def main() -> None:
             i18n=i18n,
         )
     finally:
+        cleanup_task.cancel()
         await bot.session.close()
         await redis.aclose()
         await engine.dispose()

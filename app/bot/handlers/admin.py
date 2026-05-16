@@ -367,7 +367,7 @@ async def admin_order_action(
                     "service_ready",
                     user.language,
                     purchased_gb=order.gb_amount,
-                    total_gb=service.data_limit_gb,
+                    total_gb=optional_gb(service.data_limit_gb),
                     used=optional_gb(service.used_traffic_gb),
                     remaining=optional_gb(service.remaining_traffic_gb),
                     subscription_url=html_code(service.subscription_url or "-"),
@@ -833,7 +833,7 @@ async def active_services(callback: CallbackQuery, sessionmaker: async_sessionma
                 .limit(10)
             )
         )
-    text = "\n".join(f"{s.marzban_username} | {s.data_limit_gb}GB" for s in services) or "-"
+    text = "\n".join(f"{s.marzban_username} | {optional_gb(s.data_limit_gb)}" for s in services) or "-"
     await callback.message.edit_text(f"{_('active_services')}\n\n{text}", reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
     await callback.answer()
 

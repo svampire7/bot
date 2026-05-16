@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     )
     marzban_ssl_verify: bool = Field(default=True, alias="MARZBAN_SSL_VERIFY")
 
+    trial_required_channel_url: str = Field(
+        default="https://t.me/safevpnsafe",
+        alias="TRIAL_REQUIRED_CHANNEL_URL",
+    )
+    trial_required_channel_username: str = Field(
+        default="@safevpnsafe",
+        alias="TRIAL_REQUIRED_CHANNEL_USERNAME",
+    )
+    trial_traffic_mb: int = Field(default=500, alias="TRIAL_TRAFFIC_MB")
+    trial_duration_hours: int = Field(default=2, alias="TRIAL_DURATION_HOURS")
+    trial_expire_action: str = Field(default="disable", alias="TRIAL_EXPIRE_ACTION")
+
     price_per_gb_toman: int = Field(default=220_000, alias="PRICE_PER_GB_TOMAN")
     package_prices_toman: str = Field(
         default="1:220000,3:600000,5:900000,10:1600000",

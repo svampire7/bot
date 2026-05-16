@@ -31,6 +31,7 @@ def language_keyboard() -> InlineKeyboardMarkup:
 
 def main_menu(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text=_("free_trial"), callback_data="menu:trial")
     builder.button(text=_("buy_vpn"), callback_data="menu:buy")
     builder.button(text=_("my_service"), callback_data="menu:service")
     builder.button(text=_("wallet"), callback_data="menu:wallet")
@@ -41,6 +42,25 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("change_language"), callback_data="menu:lang")
     builder.adjust(2, 2, 2, 2, 1)
+    return builder.as_markup()
+
+
+def trial_join_keyboard(_, channel_url: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("join_required_channel"), url=channel_url)
+    builder.button(text=_("check_membership_activate"), callback_data="trial:activate")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def trial_ready_keyboard(_, subscription_url: str | None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if subscription_url:
+        builder.button(text=_("copy_subscription_link"), copy_text=CopyTextButton(text=subscription_url))
+    builder.button(text=_("buy_more_traffic"), callback_data="menu:buy")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()
 
 

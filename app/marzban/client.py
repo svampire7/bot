@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import json as jsonlib
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -9,7 +10,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from app.config import Settings
 from app.marzban.schemas import MarzbanUsage, MarzbanUser
-from app.utils.formatters import bytes_to_gb, gb_to_bytes
+from app.utils.formatters import gb_to_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -111,21 +112,32 @@ class MarzbanClient:
             inbounds[protocol.strip()] = [tag.strip() for tag in tags.split(",") if tag.strip()]
         return inbounds
 
-    async def _user_payload(self, username: str, data_limit_gb: int) -> dict[str, Any]:
+    async def _user_payload(self, username: str, data_limit_bytes: int, expire: int = 0) -> dict[str, Any]:
         inbounds = await self._resolve_inbounds()
         proxies = {protocol: {} for protocol in inbounds}
         return {
             "username": username,
             "proxies": proxies,
             "inbounds": inbounds,
-            "data_limit": gb_to_bytes(data_limit_gb),
+            "data_limit": data_limit_bytes,
             "data_limit_reset_strategy": "no_reset",
-            "expire": 0,
+            "expire": expire,
             "status": "active",
         }
 
-    async def create_user(self, username: str, data_limit_gb: int) -> MarzbanUser:
-        payload = await self._user_payload(username, data_limit_gb)
+    async def create_user(self, username: str, data_limit_gb: float) -> MarzbanUser:
+        payload = await self._user_payload(username, gb_to_bytes(data_limit_gb))
+        data = await self.request("POST", "/api/user", json=payload)
+        return MarzbanUser.model_validate(data)
+
+    async def create_trial_user(
+        self, username: str, traffic_mb: int, expire_at: datetime
+    ) -> MarzbanUser:
+        payload = await self._user_payload(
+            username,
+            int(traffic_mb * 1024 * 1024),
+            int(expire_at.timestamp()),
+        )
         data = await self.request("POST", "/api/user", json=payload)
         return MarzbanUser.model_validate(data)
 
@@ -146,12 +158,11 @@ class MarzbanClient:
         current = await self.get_user(username)
         if not current:
             raise MarzbanAPIError(f"Marzban user {username} not found")
-        current_limit_gb = int(bytes_to_gb(current.data_limit or 0) or 0)
-        new_limit_gb = current_limit_gb + gb_amount
+        new_limit_bytes = int(current.data_limit or 0) + gb_to_bytes(gb_amount)
         return await self.update_user(
             username,
             {
-                "data_limit": gb_to_bytes(new_limit_gb),
+                "data_limit": new_limit_bytes,
                 "data_limit_reset_strategy": "no_reset",
                 "expire": 0,
                 "status": "active",
