@@ -63,6 +63,7 @@ class AdminStates(StatesGroup):
     setting_value = State()
     package_value = State()
     discount_value = State()
+    qr_value = State()
 
 
 def register_admin_filter(settings: Settings) -> None:
@@ -374,6 +375,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  card_holder=html_code(await payment.card_holder_name(session)),
                  bank=html_code(await payment.bank_name(session)),
                  crypto_wallet=html_code(await payment.crypto_ltc_wallet(session)),
+                 crypto_qr=_("configured") if await payment.crypto_ltc_qr_file_id(session) else "-",
                  ltc_rate=await payment.ltc_toman_rate(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
@@ -387,6 +389,39 @@ async def ask_setting_value(callback: CallbackQuery, state: FSMContext, _) -> No
     await state.set_state(AdminStates.setting_value)
     await callback.message.edit_text(_("enter_setting_value"))  # type: ignore[union-attr]
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:setqr:"))
+async def ask_qr_value(callback: CallbackQuery, state: FSMContext, _) -> None:
+    key = (callback.data or "").split(":", 2)[-1]
+    await state.update_data(setting_key=key)
+    await state.set_state(AdminStates.qr_value)
+    await callback.message.edit_text(_("send_qr_image"))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(AdminStates.qr_value)
+async def save_qr_value(
+    message: Message, state: FSMContext, sessionmaker: async_sessionmaker, _
+) -> None:
+    assert message.from_user
+    file_id = None
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document and (message.document.mime_type or "").startswith("image/"):
+        file_id = message.document.file_id
+    elif (message.text or "").strip() == "-":
+        file_id = ""
+    if file_id is None:
+        await message.answer(_("qr_image_required"))
+        return
+    data = await state.get_data()
+    key = data["setting_key"]
+    async with sessionmaker.begin() as session:
+        await set_setting(session, key, file_id)
+        await log_admin_action(session, message.from_user.id, "update_bot_setting", details=f"{key}=***")
+    await state.clear()
+    await message.answer(_("setting_saved"), reply_markup=admin_dashboard(_))
 
 
 @router.message(AdminStates.setting_value)

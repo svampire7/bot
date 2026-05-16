@@ -169,6 +169,7 @@ async def crypto_payment_selected(
     payment = PaymentService(settings)
     async with sessionmaker() as session:
         wallet = await payment.crypto_ltc_wallet(session)
+        qr_file_id = await payment.crypto_ltc_qr_file_id(session)
         rate = await payment.ltc_toman_rate(session)
     if not wallet:
         await callback.answer(_("crypto_not_configured"), show_alert=True)
@@ -176,15 +177,20 @@ async def crypto_payment_selected(
     expected = toman_to_ltc(int(data["price"]), rate)
     await state.update_data(payment_method="crypto_ltc", crypto_expected_usdt=str(expected))
     await state.set_state(BuyStates.crypto_tx)
-    await callback.message.edit_text(  # type: ignore[union-attr]
-        _("crypto_payment_instructions",
-          gb=int(data["gb"]),
-          price=toman(int(data["price"])),
-          ltc=str(expected),
-          wallet=html_code(wallet),
-          rate=toman(rate)),
-        reply_markup=crypto_payment_keyboard(_, wallet),
-    )
+    text = _("crypto_payment_instructions",
+             gb=int(data["gb"]),
+             price=toman(int(data["price"])),
+             ltc=str(expected),
+             wallet=html_code(wallet),
+             rate=toman(rate))
+    if qr_file_id:
+        await callback.message.answer_photo(  # type: ignore[union-attr]
+            qr_file_id,
+            caption=text,
+            reply_markup=crypto_payment_keyboard(_, wallet),
+        )
+    else:
+        await callback.message.edit_text(text, reply_markup=crypto_payment_keyboard(_, wallet))  # type: ignore[union-attr]
     await callback.answer()
 
 

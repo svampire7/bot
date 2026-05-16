@@ -55,6 +55,11 @@ class PaymentService:
     async def crypto_ltc_wallet(self, session: AsyncSession) -> str:
         return await get_setting(session, "crypto_ltc_wallet", self.settings.crypto_ltc_wallet)
 
+    async def crypto_ltc_qr_file_id(self, session: AsyncSession) -> str:
+        return await get_setting(
+            session, "crypto_ltc_qr_file_id", self.settings.crypto_ltc_qr_file_id
+        )
+
     async def ltc_toman_rate(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "ltc_toman_rate", str(self.settings.ltc_toman_rate)))
 

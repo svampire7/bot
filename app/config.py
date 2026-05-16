@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     bank_name: str = Field(default="", alias="BANK_NAME")
     support_username: str = Field(default="", alias="SUPPORT_USERNAME")
     crypto_ltc_wallet: str = Field(default="", alias="CRYPTO_LTC_WALLET")
+    crypto_ltc_qr_file_id: str = Field(default="", alias="CRYPTO_LTC_QR_FILE_ID")
     ltc_toman_rate: int = Field(default=7_000_000, alias="LTC_TOMAN_RATE")
     litecoin_api_base_url: str = Field(
         default="https://api.blockcypher.com/v1/ltc/main",
