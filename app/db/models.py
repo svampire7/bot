@@ -50,6 +50,13 @@ class WalletTransactionType(StrEnum):
     adjustment = "adjustment"
 
 
+class CryptoPaymentQuoteStatus(StrEnum):
+    pending = "pending"
+    completed = "completed"
+    expired = "expired"
+    failed = "failed"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -111,6 +118,7 @@ class VPNService(Base):
     used_traffic_gb: Mapped[float | None]
     remaining_traffic_gb: Mapped[float | None]
     status: Mapped[str] = mapped_column(String(32), default=VPNServiceStatus.active.value, index=True)
+    low_traffic_alert_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -207,3 +215,18 @@ class WalletTransaction(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="wallet_transactions")
+
+
+class CryptoPaymentQuote(Base):
+    __tablename__ = "crypto_payment_quotes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    expected_ltc: Mapped[str] = mapped_column(String(32))
+    ltc_toman_rate: Mapped[int] = mapped_column(Integer)
+    wallet_address: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(32), default=CryptoPaymentQuoteStatus.pending.value, index=True)
+    tx_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

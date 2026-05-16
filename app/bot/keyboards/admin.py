@@ -34,6 +34,19 @@ class AdminWalletCb(CallbackData, prefix="admwallet"):
     tx_id: int
 
 
+class AdminPageCb(CallbackData, prefix="admpage"):
+    area: str
+    offset: int = 0
+
+
+class BroadcastSegmentCb(CallbackData, prefix="admseg"):
+    segment: str
+
+
+class WalletAdjustCb(CallbackData, prefix="admwadj"):
+    user_id: int
+
+
 def admin_dashboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for text, data in [
@@ -43,6 +56,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("order_history"), "admin:orders"),
         (_("active_services"), "admin:services"),
         (_("add_traffic"), "admin:addtraffic"),
+        (_("wallet_adjust"), "admin:walletadjust"),
         (_("disable_user"), "admin:disable"),
         (_("enable_user"), "admin:enable"),
         (_("delete_user"), "admin:delete"),
@@ -52,27 +66,50 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2, 2, 2)
     return builder.as_markup()
 
 
-def pending_order_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
+def pending_order_keyboard(order_id: int, _, offset: int = 0, total: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("approve"), callback_data=AdminOrderCb(action="approve", order_id=order_id))
-    builder.button(text=_("reject"), callback_data=AdminOrderCb(action="reject", order_id=order_id))
+    builder.button(text=_("reject"), callback_data=AdminOrderCb(action="reject_menu", order_id=order_id))
     builder.button(
         text=_("ask_new_receipt"), callback_data=AdminOrderCb(action="new_receipt", order_id=order_id)
     )
     builder.button(text=_("view_user"), callback_data=AdminOrderCb(action="view_user", order_id=order_id))
+    if offset > 0:
+        builder.button(text=_("prev_page"), callback_data=AdminPageCb(area="orders", offset=max(0, offset - 1)))
+    if offset + 1 < total:
+        builder.button(text=_("next_page"), callback_data=AdminPageCb(area="orders", offset=offset + 1))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 
-def pending_wallet_keyboard(tx_id: int, _) -> InlineKeyboardMarkup:
+def reject_reason_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for action, label in [
+        ("reject_amount", _("reject_wrong_amount")),
+        ("reject_unreadable", _("reject_unreadable")),
+        ("reject_duplicate", _("reject_duplicate")),
+        ("reject_wrong_card", _("reject_wrong_card")),
+        ("reject_other", _("reject_other")),
+    ]:
+        builder.button(text=label, callback_data=AdminOrderCb(action=action, order_id=order_id))
+    builder.button(text=_("back"), callback_data="admin:pending")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def pending_wallet_keyboard(tx_id: int, _, offset: int = 0, total: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("approve"), callback_data=AdminWalletCb(action="approve", tx_id=tx_id))
     builder.button(text=_("reject"), callback_data=AdminWalletCb(action="reject", tx_id=tx_id))
+    if offset > 0:
+        builder.button(text=_("prev_page"), callback_data=AdminPageCb(area="wallet", offset=max(0, offset - 1)))
+    if offset + 1 < total:
+        builder.button(text=_("next_page"), callback_data=AdminPageCb(area="wallet", offset=offset + 1))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 1)
     return builder.as_markup()
@@ -88,7 +125,7 @@ def order_recovery_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("retry_order"), callback_data=AdminOrderCb(action="retry", order_id=order_id))
     builder.button(text=_("mark_completed"), callback_data=AdminOrderCb(action="complete", order_id=order_id))
-    builder.button(text=_("reject"), callback_data=AdminOrderCb(action="reject", order_id=order_id))
+    builder.button(text=_("reject"), callback_data=AdminOrderCb(action="reject_menu", order_id=order_id))
     builder.button(text=_("view_user"), callback_data=AdminOrderCb(action="view_user", order_id=order_id))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 1)
@@ -105,6 +142,7 @@ def user_actions(user_id: int, _) -> InlineKeyboardMarkup:
         ("newservice", _("create_new_service")),
     ]:
         builder.button(text=label, callback_data=AdminUserCb(action=action, user_id=user_id))
+    builder.button(text=_("wallet_adjust"), callback_data=WalletAdjustCb(user_id=user_id))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
@@ -114,6 +152,22 @@ def confirm_broadcast(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("approve"), callback_data="admin:broadcast:confirm")
     builder.button(text=_("reject"), callback_data="admin:dashboard")
+    return builder.as_markup()
+
+
+def broadcast_segments_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for segment, label in [
+        ("all", _("segment_all")),
+        ("active", _("segment_active")),
+        ("no_service", _("segment_no_service")),
+        ("fa", _("segment_fa")),
+        ("en", _("segment_en")),
+        ("wallet_positive", _("segment_wallet_positive")),
+    ]:
+        builder.button(text=label, callback_data=BroadcastSegmentCb(segment=segment))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 

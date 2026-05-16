@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -20,11 +22,14 @@ from app.bot.keyboards.user import (
 )
 from app.config import Settings
 from app.db.repositories import (
+    create_crypto_quote,
+    crypto_quote_for_update,
     get_or_create_user,
     order_by_crypto_tx_hash,
     wallet_history,
     wallet_transaction_by_crypto_tx_hash,
 )
+from app.db.models import CryptoPaymentQuoteStatus
 from app.services.crypto_service import (
     CryptoPaymentError,
     normalize_tx_hash,
@@ -57,6 +62,7 @@ def wallet_history_text(_, rows) -> str:
             type=_("wallet_type_" + row.transaction_type),
             amount=toman(row.amount_toman),
             status=_("status_" + row.status),
+            note=row.admin_note or "-",
             date=row.created_at.strftime("%Y-%m-%d %H:%M"),
         )
         for row in rows
@@ -134,10 +140,20 @@ async def wallet_amount_entered(
         await state.clear()
         return
     expected = toman_to_ltc(amount, rate)
-    await state.update_data(amount_toman=amount, crypto_expected_ltc=str(expected))
+    async with sessionmaker.begin() as session:
+        user = await get_or_create_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name,
+            settings.default_language,
+        )
+        quote = await create_crypto_quote(session, user.id, amount, str(expected), rate, wallet)
+    await state.update_data(amount_toman=amount, crypto_expected_ltc=str(expected), quote_id=quote.id)
     await state.set_state(WalletStates.crypto_tx)
     text = _(
         "wallet_ltc_instructions",
+        quote_id=quote.id,
         amount=toman(amount),
         ltc=str(expected),
         wallet=html_code(wallet),
@@ -216,26 +232,41 @@ async def wallet_crypto_tx_submitted(
     if not await redis.set(f"wallet_crypto_check:{message.from_user.id}", "1", nx=True, ex=20):
         return
     data = await state.get_data()
-    payment = PaymentService(settings)
     async with sessionmaker() as session:
         order_existing = await order_by_crypto_tx_hash(session, tx_hash)
         wallet_existing = await wallet_transaction_by_crypto_tx_hash(session, tx_hash)
-        wallet = await payment.crypto_ltc_wallet(session)
-        rate = await payment.ltc_toman_rate(session)
     if order_existing or wallet_existing:
         await message.answer(_("crypto_tx_already_used"))
         return
+    data = await state.get_data()
+    async with sessionmaker.begin() as session:
+        quote = await crypto_quote_for_update(session, int(data["quote_id"]))
+        if not quote or quote.status != CryptoPaymentQuoteStatus.pending.value:
+            await message.answer(_("crypto_quote_invalid"))
+            await state.clear()
+            return
+        if quote.expires_at < datetime.now(timezone.utc):
+            quote.status = CryptoPaymentQuoteStatus.expired.value
+            await message.answer(_("crypto_quote_expired"))
+            await state.clear()
+            return
+        wallet = quote.wallet_address
+        expected_ltc = quote.expected_ltc
     try:
         transfer = await verify_ltc_payment(
             settings,
             wallet,
             tx_hash,
-            toman_to_ltc(int(data["amount_toman"]), rate),
+            Decimal(expected_ltc),
         )
     except CryptoPaymentError as exc:
         await message.answer(_("crypto_check_failed", error=html_escape(str(exc))))
         return
     async with sessionmaker.begin() as session:
+        quote = await crypto_quote_for_update(session, int(data["quote_id"]))
+        if quote:
+            quote.status = CryptoPaymentQuoteStatus.completed.value
+            quote.tx_hash = tx_hash
         user = await get_or_create_user(
             session,
             message.from_user.id,
@@ -249,6 +280,7 @@ async def wallet_crypto_tx_submitted(
             int(data["amount_toman"]),
             tx_hash,
             str(transfer.amount_ltc),
+            quote_id=int(data["quote_id"]),
         )
         balance = await WalletService().balance(session, user.id)
     await state.clear()

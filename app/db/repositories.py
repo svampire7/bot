@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models import (
     BotSetting,
+    CryptoPaymentQuote,
+    CryptoPaymentQuoteStatus,
     DiscountCode,
     Order,
     OrderStatus,
@@ -90,6 +92,13 @@ async def pending_orders(session: AsyncSession, limit: int = 10, offset: int = 0
     return list(result)
 
 
+async def pending_order_count(session: AsyncSession) -> int:
+    return int(
+        await session.scalar(select(func.count(Order.id)).where(Order.status == OrderStatus.pending_admin.value))
+        or 0
+    )
+
+
 async def order_with_user_for_update(session: AsyncSession, order_id: int) -> Order | None:
     stmt: Select[tuple[Order]] = (
         select(Order)
@@ -129,15 +138,27 @@ async def wallet_balance(session: AsyncSession, user_id: int) -> int:
     return int(value or 0)
 
 
-async def pending_wallet_topups(session: AsyncSession, limit: int = 10) -> list[WalletTransaction]:
+async def pending_wallet_topups(session: AsyncSession, limit: int = 10, offset: int = 0) -> list[WalletTransaction]:
     result = await session.scalars(
         select(WalletTransaction)
         .options(selectinload(WalletTransaction.user))
         .where(WalletTransaction.status == WalletTransactionStatus.pending_admin.value)
         .order_by(WalletTransaction.created_at.asc())
+        .offset(offset)
         .limit(limit)
     )
     return list(result)
+
+
+async def pending_wallet_topup_count(session: AsyncSession) -> int:
+    return int(
+        await session.scalar(
+            select(func.count(WalletTransaction.id)).where(
+                WalletTransaction.status == WalletTransactionStatus.pending_admin.value
+            )
+        )
+        or 0
+    )
 
 
 async def wallet_transaction_for_update(session: AsyncSession, tx_id: int) -> WalletTransaction | None:
@@ -157,6 +178,51 @@ async def wallet_history(session: AsyncSession, user_id: int, limit: int = 10) -
         .limit(limit)
     )
     return list(result)
+
+
+async def referral_stats(session: AsyncSession, user_id: int) -> dict[str, int]:
+    invited = await session.scalar(select(func.count(User.id)).where(User.referred_by_user_id == user_id))
+    paid = await session.scalar(
+        select(func.count(User.id)).where(
+            User.referred_by_user_id == user_id,
+            User.referral_bonus_awarded.is_(True),
+        )
+    )
+    user = await session.get(User, user_id)
+    return {
+        "invited": int(invited or 0),
+        "paid": int(paid or 0),
+        "pending_bonus_gb": int(user.pending_referral_bonus_gb or 0) if user else 0,
+    }
+
+
+async def create_crypto_quote(
+    session: AsyncSession,
+    user_id: int,
+    amount_toman: int,
+    expected_ltc: str,
+    ltc_toman_rate: int,
+    wallet_address: str,
+    ttl_minutes: int = 30,
+) -> CryptoPaymentQuote:
+    quote = CryptoPaymentQuote(
+        user_id=user_id,
+        amount_toman=amount_toman,
+        expected_ltc=expected_ltc,
+        ltc_toman_rate=ltc_toman_rate,
+        wallet_address=wallet_address,
+        status=CryptoPaymentQuoteStatus.pending.value,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes),
+    )
+    session.add(quote)
+    await session.flush()
+    return quote
+
+
+async def crypto_quote_for_update(session: AsyncSession, quote_id: int) -> CryptoPaymentQuote | None:
+    return await session.scalar(
+        select(CryptoPaymentQuote).where(CryptoPaymentQuote.id == quote_id).with_for_update()
+    )
 
 
 async def order_context(session: AsyncSession, order: Order) -> dict[str, int | str]:
@@ -338,3 +404,34 @@ async def stats(session: AsyncSession) -> dict[str, int]:
         "today_revenue": int(today_revenue or 0),
         "month_revenue": int(month_revenue or 0),
     }
+
+
+async def advanced_stats(session: AsyncSession) -> dict[str, int]:
+    data = await stats(session)
+    topups = await session.scalar(
+        select(func.count(WalletTransaction.id)).where(
+            WalletTransaction.transaction_type.in_(["topup_card", "topup_ltc"]),
+            WalletTransaction.status == WalletTransactionStatus.completed.value,
+        )
+    )
+    wallet_purchases = await session.scalar(
+        select(func.count(Order.id)).where(
+            Order.status == OrderStatus.completed.value,
+            Order.payment_method == "wallet",
+        )
+    )
+    referral_purchases = await session.scalar(
+        select(func.count(User.id)).where(User.referral_bonus_awarded.is_(True))
+    )
+    no_service_users = await session.scalar(
+        select(func.count(User.id)).outerjoin(VPNService).where(VPNService.id.is_(None))
+    )
+    data.update(
+        {
+            "completed_topups": int(topups or 0),
+            "wallet_purchases": int(wallet_purchases or 0),
+            "referral_purchases": int(referral_purchases or 0),
+            "no_service_users": int(no_service_users or 0),
+        }
+    )
+    return data

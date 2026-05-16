@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.user import (
     OrderCb,
+    ServiceCb,
     back_to_menu_keyboard,
     order_detail_keyboard,
     orders_keyboard,
@@ -22,6 +23,15 @@ from app.services.vpn_service import VPNProvisioningService
 from app.utils.formatters import html_code, optional_gb, toman
 
 router = Router()
+
+
+def low_traffic_warning(_, service) -> str:
+    remaining = float(service.remaining_traffic_gb or 0)
+    total = float(service.data_limit_gb or 0)
+    threshold = max(1.0, total * 0.2)
+    if total > 0 and remaining <= threshold:
+        return "\n\n" + _("low_traffic_warning", remaining=optional_gb(remaining))
+    return ""
 
 
 @router.callback_query(F.data == "menu:service")
@@ -46,10 +56,21 @@ async def my_service(callback: CallbackQuery, sessionmaker: async_sessionmaker, 
                   total_gb=service.data_limit_gb,
                   used=optional_gb(service.used_traffic_gb),
                   remaining=optional_gb(service.remaining_traffic_gb),
-                  subscription_url=html_code(service.subscription_url or "-")),
+                  subscription_url=html_code(service.subscription_url or "-"))
+                + low_traffic_warning(_, service),
                 reply_markup=service_copy_keyboard(_, service.subscription_url),
             )
     await callback.answer()
+
+
+@router.callback_query(ServiceCb.filter())
+async def service_action(
+    callback: CallbackQuery, callback_data: ServiceCb, sessionmaker: async_sessionmaker, settings: Settings, _
+) -> None:
+    if callback_data.action != "refresh":
+        await callback.answer()
+        return
+    await my_service(callback, sessionmaker, settings, _)
 
 
 @router.callback_query(F.data == "menu:orders")

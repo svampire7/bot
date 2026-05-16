@@ -18,6 +18,10 @@ class OrderCb(CallbackData, prefix="ord"):
     order_id: int
 
 
+class ServiceCb(CallbackData, prefix="svc"):
+    action: str
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="فارسی", callback_data=LangCb(code="fa"))
@@ -142,6 +146,8 @@ def service_copy_keyboard(_, subscription_url: str | None) -> InlineKeyboardMark
             text=_("copy_subscription_link"),
             copy_text=CopyTextButton(text=subscription_url),
         )
+    builder.button(text=_("refresh_usage"), callback_data=ServiceCb(action="refresh"))
+    builder.button(text=_("buy_more_traffic"), callback_data="menu:renew")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()

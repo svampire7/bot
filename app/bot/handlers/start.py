@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.user import invite_keyboard, language_keyboard, main_menu
 from app.config import Settings
-from app.db.repositories import get_or_create_user, set_referrer_if_allowed
+from app.db.repositories import get_or_create_user, referral_stats, set_referrer_if_allowed
 from app.services.payment_service import PaymentService
 
 router = Router()
@@ -74,8 +74,16 @@ async def invite_menu(callback: CallbackQuery, bot, sessionmaker: async_sessionm
     invite_link = f"https://t.me/{me.username}?start=ref_{callback.from_user.id}"
     async with sessionmaker() as session:
         bonus_gb = await PaymentService(settings).referral_bonus_gb(session)
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        stats = await referral_stats(session, user.id)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("invite_text", bonus_gb=bonus_gb, invite_link=invite_link),
+        _("invite_text", bonus_gb=bonus_gb, invite_link=invite_link, **stats),
         reply_markup=invite_keyboard(_, invite_link),
     )
     await callback.answer()
