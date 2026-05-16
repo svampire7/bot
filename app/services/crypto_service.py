@@ -8,8 +8,8 @@ import aiohttp
 
 from app.config import Settings
 
-USDT_TRC20_CONTRACT = "TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
 TX_HASH_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+SATOSHI_PER_LTC = Decimal("100000000")
 
 
 class CryptoPaymentError(RuntimeError):
@@ -20,15 +20,15 @@ class CryptoPaymentError(RuntimeError):
 class CryptoTransfer:
     tx_hash: str
     to_address: str
-    amount_usdt: Decimal
-    confirmed: bool
+    amount_ltc: Decimal
+    confirmations: int
 
 
-def toman_to_usdt(price_toman: int, usdt_toman_rate: int) -> Decimal:
-    if usdt_toman_rate <= 0:
-        raise ValueError("USDT rate must be positive")
-    return (Decimal(price_toman) / Decimal(usdt_toman_rate)).quantize(
-        Decimal("0.01"), rounding=ROUND_UP
+def toman_to_ltc(price_toman: int, ltc_toman_rate: int) -> Decimal:
+    if ltc_toman_rate <= 0:
+        raise ValueError("LTC rate must be positive")
+    return (Decimal(price_toman) / Decimal(ltc_toman_rate)).quantize(
+        Decimal("0.00000001"), rounding=ROUND_UP
     )
 
 
@@ -40,55 +40,52 @@ def validate_tx_hash(tx_hash: str) -> bool:
     return bool(TX_HASH_RE.fullmatch(normalize_tx_hash(tx_hash)))
 
 
-class TronGridClient:
+class LitecoinClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    async def get_usdt_transfer(self, wallet: str, tx_hash: str) -> CryptoTransfer | None:
+    async def get_transfer_to_wallet(self, wallet: str, tx_hash: str) -> CryptoTransfer | None:
         tx_hash = normalize_tx_hash(tx_hash)
         if not validate_tx_hash(tx_hash):
             raise CryptoPaymentError("Invalid transaction hash")
-        headers = {}
-        if self.settings.trongrid_api_key:
-            headers["TRON-PRO-API-KEY"] = self.settings.trongrid_api_key
-        url = f"{self.settings.trongrid_base_url.rstrip('/')}/v1/accounts/{wallet}/transactions/trc20"
-        params = {
-            "only_confirmed": "true",
-            "limit": "50",
-            "contract_address": USDT_TRC20_CONTRACT,
-        }
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=20)) as response:
+        url = f"{self.settings.litecoin_api_base_url.rstrip('/')}/txs/{tx_hash}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as response:
+                if response.status == 404:
+                    return None
                 if response.status >= 500:
-                    raise CryptoPaymentError("Temporary TronGrid error")
+                    raise CryptoPaymentError("Temporary Litecoin API error")
                 if response.status >= 400:
                     text = await response.text()
-                    raise CryptoPaymentError(f"TronGrid error {response.status}: {text[:200]}")
+                    raise CryptoPaymentError(f"Litecoin API error {response.status}: {text[:200]}")
                 payload = await response.json()
-        for item in payload.get("data", []):
-            if normalize_tx_hash(item.get("transaction_id", "")) != tx_hash:
-                continue
-            value = Decimal(item.get("value", "0")) / Decimal("1000000")
-            return CryptoTransfer(
-                tx_hash=tx_hash,
-                to_address=item.get("to", ""),
-                amount_usdt=value,
-                confirmed=True,
-            )
-        return None
+
+        confirmations = int(payload.get("confirmations") or 0)
+        total_satoshi = 0
+        for output in payload.get("outputs", []):
+            if wallet in (output.get("addresses") or []):
+                total_satoshi += int(output.get("value") or 0)
+        if total_satoshi <= 0:
+            return None
+        return CryptoTransfer(
+            tx_hash=tx_hash,
+            to_address=wallet,
+            amount_ltc=(Decimal(total_satoshi) / SATOSHI_PER_LTC),
+            confirmations=confirmations,
+        )
 
 
-async def verify_usdt_trc20_payment(
+async def verify_ltc_payment(
     settings: Settings,
     wallet: str,
     tx_hash: str,
-    expected_usdt: Decimal,
+    expected_ltc: Decimal,
 ) -> CryptoTransfer:
-    transfer = await TronGridClient(settings).get_usdt_transfer(wallet, tx_hash)
+    transfer = await LitecoinClient(settings).get_transfer_to_wallet(wallet, tx_hash)
     if not transfer:
-        raise CryptoPaymentError("Transaction not found or not confirmed yet")
-    if transfer.to_address != wallet:
-        raise CryptoPaymentError("Transaction was not sent to the configured wallet")
-    if transfer.amount_usdt < expected_usdt:
+        raise CryptoPaymentError("Transaction not found for the configured wallet")
+    if transfer.confirmations < 1:
+        raise CryptoPaymentError("Transaction is not confirmed yet")
+    if transfer.amount_ltc < expected_ltc:
         raise CryptoPaymentError("Transaction amount is lower than required")
     return transfer

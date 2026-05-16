@@ -373,8 +373,8 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  card=html_code(await payment.card_number(session)),
                  card_holder=html_code(await payment.card_holder_name(session)),
                  bank=html_code(await payment.bank_name(session)),
-                 crypto_wallet=html_code(await payment.crypto_usdt_trc20_wallet(session)),
-                 usdt_rate=await payment.usdt_toman_rate(session),
+                 crypto_wallet=html_code(await payment.crypto_ltc_wallet(session)),
+                 ltc_rate=await payment.ltc_toman_rate(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -397,7 +397,7 @@ async def save_setting_value(
     data = await state.get_data()
     key = data["setting_key"]
     value = (message.text or "").strip()
-    numeric_keys = {"price_per_gb_toman", "min_custom_gb", "max_custom_gb", "usdt_toman_rate"}
+    numeric_keys = {"price_per_gb_toman", "min_custom_gb", "max_custom_gb", "ltc_toman_rate"}
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))
         return

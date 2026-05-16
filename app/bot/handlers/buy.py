@@ -23,9 +23,9 @@ from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
 from app.services.crypto_service import (
     CryptoPaymentError,
     normalize_tx_hash,
-    toman_to_usdt,
+    toman_to_ltc,
     validate_tx_hash,
-    verify_usdt_trc20_payment,
+    verify_ltc_payment,
 )
 from app.services.discount_service import apply_discount
 from app.services.order_service import OrderService
@@ -168,19 +168,19 @@ async def crypto_payment_selected(
     data = await state.get_data()
     payment = PaymentService(settings)
     async with sessionmaker() as session:
-        wallet = await payment.crypto_usdt_trc20_wallet(session)
-        rate = await payment.usdt_toman_rate(session)
+        wallet = await payment.crypto_ltc_wallet(session)
+        rate = await payment.ltc_toman_rate(session)
     if not wallet:
         await callback.answer(_("crypto_not_configured"), show_alert=True)
         return
-    expected = toman_to_usdt(int(data["price"]), rate)
-    await state.update_data(payment_method="crypto_usdt_trc20", crypto_expected_usdt=str(expected))
+    expected = toman_to_ltc(int(data["price"]), rate)
+    await state.update_data(payment_method="crypto_ltc", crypto_expected_usdt=str(expected))
     await state.set_state(BuyStates.crypto_tx)
     await callback.message.edit_text(  # type: ignore[union-attr]
         _("crypto_payment_instructions",
           gb=int(data["gb"]),
           price=toman(int(data["price"])),
-          usdt=str(expected),
+          ltc=str(expected),
           wallet=html_code(wallet),
           rate=toman(rate)),
         reply_markup=crypto_payment_keyboard(_, wallet),
@@ -242,17 +242,17 @@ async def crypto_tx_submitted(
     payment = PaymentService(settings)
     async with sessionmaker() as session:
         existing = await order_by_crypto_tx_hash(session, tx_hash)
-        wallet = await payment.crypto_usdt_trc20_wallet(session)
-        rate = await payment.usdt_toman_rate(session)
+        wallet = await payment.crypto_ltc_wallet(session)
+        rate = await payment.ltc_toman_rate(session)
     if existing:
         await message.answer(_("crypto_tx_already_used"))
         return
     try:
-        transfer = await verify_usdt_trc20_payment(
+        transfer = await verify_ltc_payment(
             settings,
             wallet,
             tx_hash,
-            toman_to_usdt(int(data["price"]), rate),
+            toman_to_ltc(int(data["price"]), rate),
         )
     except CryptoPaymentError as exc:
         await message.answer(_("crypto_check_failed", error=html_escape(str(exc))))
@@ -274,9 +274,9 @@ async def crypto_tx_submitted(
             original_price_toman=int(data.get("original_price") or data["price"]),
             discount_code=data.get("discount_code"),
             discount_amount_toman=int(data.get("discount_amount") or 0),
-            payment_method="crypto_usdt_trc20",
+            payment_method="crypto_ltc",
             crypto_tx_hash=tx_hash,
-            crypto_expected_usdt=str(data.get("crypto_expected_usdt") or transfer.amount_usdt),
+            crypto_expected_usdt=str(data.get("crypto_expected_usdt") or transfer.amount_ltc),
         )
         await session.commit()
     await state.clear()
