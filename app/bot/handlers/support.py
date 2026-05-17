@@ -15,8 +15,10 @@ from app.db.repositories import (
     get_or_create_support_ticket,
     get_user_by_telegram_id,
     support_history,
+    wallet_balance,
 )
 from app.services.admin_service import log_admin_action
+from app.utils.formatters import toman
 
 router = Router()
 
@@ -48,6 +50,7 @@ async def receive_support_message(
     assert message.from_user
     async with sessionmaker.begin() as session:
         user = await get_user_by_telegram_id(session, message.from_user.id)
+        balance = await wallet_balance(session, user.id) if user else 0
         if user:
             ticket = await get_or_create_support_ticket(session, user.id)
             await add_support_message(
@@ -63,18 +66,27 @@ async def receive_support_message(
     first_name = message.from_user.first_name or "-"
     header = _(
         "support_admin_header",
+        user_id=user.id if user else "-",
         telegram_id=message.from_user.id,
         username=username,
         first_name=first_name,
+        balance=toman(balance),
     )
     for admin_id in settings.admin_telegram_ids:
         try:
-            await bot.send_message(
-                admin_id,
-                header,
-                reply_markup=support_reply_keyboard(user.id if user else message.from_user.id, _),
-            )
-            await bot.copy_message(admin_id, message.chat.id, message.message_id)
+            if message.text:
+                await bot.send_message(
+                    admin_id,
+                    f"{header}\n\n{message.text}",
+                    reply_markup=support_reply_keyboard(user.id if user else message.from_user.id, _),
+                )
+            else:
+                await bot.send_message(
+                    admin_id,
+                    header,
+                    reply_markup=support_reply_keyboard(user.id if user else message.from_user.id, _),
+                )
+                await bot.copy_message(admin_id, message.chat.id, message.message_id)
         except Exception:
             continue
     await state.clear()
@@ -95,6 +107,7 @@ async def ask_support_reply(
         return
     async with sessionmaker() as session:
         user = await session.get(User, callback_data.user_id)
+        balance = await wallet_balance(session, callback_data.user_id) if user else 0
         history = await support_history(session, callback_data.user_id)
     if not user:
         await callback.answer(_("user_not_found"), show_alert=True)
@@ -107,7 +120,16 @@ async def ask_support_reply(
         await callback.message.answer(_("support_history_title") + "\n" + "\n".join(lines))  # type: ignore[union-attr]
     await state.update_data(support_user_id=user.id, support_telegram_id=user.telegram_id)
     await state.set_state(AdminSupportStates.reply)
-    await callback.message.answer(_("support_reply_prompt"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
+    await callback.message.answer(  # type: ignore[union-attr]
+        _(
+            "support_reply_prompt",
+            telegram_id=user.telegram_id,
+            username=user.telegram_username or "-",
+            first_name=user.first_name or "-",
+            balance=toman(balance),
+        ),
+        reply_markup=admin_back_keyboard(_),
+    )
     await callback.answer()
 
 

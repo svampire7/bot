@@ -183,19 +183,31 @@ async def wallet_payment_selected(
                 callback.from_user.first_name,
                 settings.default_language,
             )
+            final_price = int(data["price"])
+            balance = await WalletService().balance(session, user.id)
+            if balance < final_price:
+                await callback.answer(
+                    _(
+                        "insufficient_wallet_balance_detail",
+                        balance=toman(balance),
+                        required=toman(final_price),
+                    ),
+                    show_alert=True,
+                )
+                return
             order = await OrderService(settings).create_order(
                 session,
                 user.id,
                 int(data["gb"]),
-                int(data["price"]),
+                final_price,
                 None,
-                original_price_toman=int(data.get("original_price") or data["price"]),
+                original_price_toman=int(data.get("original_price") or final_price),
                 discount_code=data.get("discount_code"),
                 discount_amount_toman=int(data.get("discount_amount") or 0),
                 payment_method="wallet",
             )
             order_id = order.id
-            await WalletService().spend(session, user.id, int(data["price"]), order.id)
+            await WalletService().spend(session, user.id, final_price, order.id)
             try:
                 service, _created, config_links, referral_reward = await VPNProvisioningService(settings).approve_order(
                     session, order.id
@@ -205,7 +217,7 @@ async def wallet_payment_selected(
                 await WalletService().refund(
                     session,
                     user.id,
-                    int(data["price"]),
+                    final_price,
                     order.id,
                     note=f"Provisioning failed: {exc}",
                 )

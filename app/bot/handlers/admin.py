@@ -421,6 +421,7 @@ async def show_user_profile(callback: CallbackQuery, session, user_id: int, _) -
         await callback.answer(_("user_not_found"), show_alert=True)
         return
     service = await active_service_for_user(session, user.id)
+    balance = await wallet_balance(session, user.id)
     total_gb = await session.scalar(
         select(func.coalesce(func.sum(Order.gb_amount), 0)).where(
             Order.user_id == user.id, Order.status == OrderStatus.completed.value
@@ -433,6 +434,7 @@ async def show_user_profile(callback: CallbackQuery, session, user_id: int, _) -
              username=user.telegram_username or "-",
              language=user.language,
              service=service_label,
+             balance=toman(balance),
              total_gb=int(total_gb or 0))
     await callback.message.answer(text, reply_markup=user_actions(user.id, _))  # type: ignore[union-attr]
     await callback.answer()
