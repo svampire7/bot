@@ -33,7 +33,11 @@ async def parse_reseller_bulk_request(session: AsyncSession, settings: Settings,
     items = parse_bulk_plan(text)
     total_accounts = sum(item.quantity for item in items)
     total_gb = sum(item.quantity * item.gb for item in items)
-    price = total_gb * await PaymentService(settings).reseller_price_per_gb(session)
+    payment = PaymentService(settings)
+    min_total_gb = await payment.min_reseller_bulk_gb(session)
+    if total_gb < min_total_gb:
+        raise ValueError(f"Minimum reseller bulk order is {min_total_gb}GB.")
+    price = total_gb * await payment.reseller_price_per_gb(session)
     return ResellerBulkPlan(items=items, total_accounts=total_accounts, total_gb=total_gb, total_price=price)
 
 

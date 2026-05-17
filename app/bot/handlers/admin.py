@@ -990,6 +990,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  ltc_rate=await payment.ltc_toman_rate(session),
                  referral_bonus=await payment.referral_bonus_gb(session),
                  reseller_price=await payment.reseller_price_per_gb(session),
+                 reseller_min_gb=await payment.min_reseller_bulk_gb(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -1052,6 +1053,7 @@ async def save_setting_value(
         "ltc_toman_rate",
         "referral_bonus_gb",
         "price_per_gb_reseller",
+        "min_reseller_bulk_gb",
     }
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))

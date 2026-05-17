@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     price_per_gb_toman: int = Field(default=220_000, alias="PRICE_PER_GB_TOMAN")
     price_per_gb_reseller: int = Field(default=180_000, alias="PRICE_PER_GB_RESELLER")
+    min_reseller_bulk_gb: int = Field(default=50, alias="MIN_RESELLER_BULK_GB")
     package_prices_toman: str = Field(
         default="1:220000,3:600000,5:900000,10:1600000",
         alias="PACKAGE_PRICES_TOMAN",

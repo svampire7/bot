@@ -214,6 +214,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_usdt_rate"), callback_data="admin:set:ltc_toman_rate")
     builder.button(text=_("change_referral_bonus"), callback_data="admin:set:referral_bonus_gb")
     builder.button(text=_("change_reseller_price"), callback_data="admin:set:price_per_gb_reseller")
+    builder.button(text=_("change_reseller_min_gb"), callback_data="admin:set:min_reseller_bulk_gb")
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)

@@ -202,6 +202,8 @@ Send the reseller Telegram ID and optional name:
 ```
 
 Set the reseller price from `/admin` -> `Bot Settings` -> `Reseller Price`.
+Reseller bulk orders must be at least 50GB total by default. Admins can change this from
+`/admin` -> `Bot Settings` -> `Reseller Min GB`.
 
 Approved resellers use `Reseller Panel` from the main menu. Bulk order input:
 

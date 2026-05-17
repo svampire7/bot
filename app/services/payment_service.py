@@ -74,3 +74,6 @@ class PaymentService:
 
     async def reseller_price_per_gb(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "price_per_gb_reseller", str(self.settings.price_per_gb_reseller)))
+
+    async def min_reseller_bulk_gb(self, session: AsyncSession) -> int:
+        return int(await get_setting(session, "min_reseller_bulk_gb", str(self.settings.min_reseller_bulk_gb)))
