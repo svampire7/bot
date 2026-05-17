@@ -19,6 +19,7 @@ from app.bot.keyboards.admin import (
     BroadcastSegmentCb,
     DiscountAdminCb,
     PackageAdminCb,
+    SupportTicketCb,
     admin_back_keyboard,
     admin_dashboard,
     broadcast_segments_keyboard,
@@ -31,6 +32,8 @@ from app.bot.keyboards.admin import (
     pending_wallet_keyboard,
     reject_reason_keyboard,
     settings_keyboard,
+    support_inbox_keyboard,
+    support_thread_keyboard,
     user_actions,
     WalletAdjustCb,
 )
@@ -49,6 +52,7 @@ from app.db.models import (
 )
 from app.db.repositories import (
     active_service_for_user,
+    add_support_message,
     advanced_stats,
     get_discount_code,
     list_discount_codes,
@@ -61,6 +65,10 @@ from app.db.repositories import (
     search_user,
     set_setting,
     stats,
+    support_ticket_by_id,
+    support_ticket_count,
+    support_ticket_messages,
+    support_tickets,
     user_order_history,
     wallet_transaction_for_update,
     wallet_balance,
@@ -95,6 +103,7 @@ class AdminStates(StatesGroup):
     wallet_adjust_note = State()
     bulk_name = State()
     bulk_plan = State()
+    support_reply = State()
 
 
 def register_admin_filter(settings: Settings) -> None:
@@ -192,6 +201,123 @@ async def show_pending_at(callback: CallbackQuery, sessionmaker: async_sessionma
 @router.callback_query(F.data == "admin:wallet_topups")
 async def show_pending_wallet_topups(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
     await show_pending_wallet_at(callback, sessionmaker, _, 0)
+
+
+@router.callback_query(F.data == "admin:support")
+async def show_support_inbox(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    await show_support_inbox_at(callback, sessionmaker, _, 0)
+
+
+@router.callback_query(SupportTicketCb.filter())
+async def support_ticket_action(
+    callback: CallbackQuery,
+    callback_data: SupportTicketCb,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    _,
+) -> None:
+    if callback.from_user.id not in set(settings.admin_telegram_ids):
+        await callback.answer(_("access_denied"), show_alert=True)
+        return
+    if callback_data.action == "page":
+        await show_support_inbox_at(callback, sessionmaker, _, callback_data.offset)
+        return
+    if callback_data.action == "view":
+        await show_support_thread(callback, sessionmaker, _, callback_data.ticket_id, callback_data.offset)
+        return
+    if callback_data.action == "reply":
+        async with sessionmaker() as session:
+            ticket = await support_ticket_by_id(session, callback_data.ticket_id)
+            balance = await wallet_balance(session, ticket.user_id) if ticket else 0
+        if not ticket:
+            await callback.answer(_("support_ticket_not_found"), show_alert=True)
+            return
+        await state.update_data(
+            support_ticket_id=ticket.id,
+            support_user_id=ticket.user_id,
+            support_telegram_id=ticket.user.telegram_id,
+            support_offset=callback_data.offset,
+        )
+        await state.set_state(AdminStates.support_reply)
+        await callback.message.answer(  # type: ignore[union-attr]
+            _(
+                "support_reply_prompt",
+                telegram_id=ticket.user.telegram_id,
+                username=ticket.user.telegram_username or "-",
+                first_name=ticket.user.first_name or "-",
+                balance=toman(balance),
+            ),
+            reply_markup=admin_back_keyboard(_),
+        )
+        await callback.answer()
+
+
+async def show_support_inbox_at(callback: CallbackQuery, sessionmaker: async_sessionmaker, _, offset: int) -> None:
+    async with sessionmaker() as session:
+        total = await support_ticket_count(session)
+        tickets = await support_tickets(session, limit=5, offset=offset)
+    if not tickets:
+        await callback.message.edit_text(_("support_inbox_empty"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    rows = []
+    labels = []
+    for ticket in tickets:
+        user = ticket.user
+        username = f"@{user.telegram_username}" if user.telegram_username else "-"
+        preview = (ticket.last_message_preview or "-").replace("\n", " ")[:60]
+        rows.append(
+            _(
+                "support_ticket_line",
+                ticket_id=ticket.id,
+                status=_("support_status_" + ticket.status),
+                telegram_id=user.telegram_id,
+                username=username,
+                preview=preview,
+                date=ticket.updated_at.strftime("%Y-%m-%d %H:%M"),
+            )
+        )
+        labels.append((ticket.id, f"#{ticket.id} {username}"))
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("support_inbox_title", total=total) + "\n\n" + "\n\n".join(rows),
+        reply_markup=support_inbox_keyboard(labels, offset, total, _),
+    )
+    await callback.answer()
+
+
+async def show_support_thread(
+    callback: CallbackQuery, sessionmaker: async_sessionmaker, _, ticket_id: int, offset: int
+) -> None:
+    async with sessionmaker() as session:
+        ticket = await support_ticket_by_id(session, ticket_id)
+        if not ticket:
+            await callback.answer(_("support_ticket_not_found"), show_alert=True)
+            return
+        balance = await wallet_balance(session, ticket.user_id)
+        messages = await support_ticket_messages(session, ticket.id, limit=10)
+    lines = []
+    for item in messages:
+        text = (item.text or item.message_type or "-").replace("\n", " ")[:300]
+        lines.append(
+            _("support_history_line", sender=_("support_sender_" + item.sender_type), text=text)
+        )
+    history = "\n".join(lines) if lines else "-"
+    user = ticket.user
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _(
+            "support_thread_text",
+            ticket_id=ticket.id,
+            status=_("support_status_" + ticket.status),
+            telegram_id=user.telegram_id,
+            username=user.telegram_username or "-",
+            first_name=user.first_name or "-",
+            balance=toman(balance),
+            history=history,
+        ),
+        reply_markup=support_thread_keyboard(ticket.id, offset, _),
+    )
+    await callback.answer()
 
 
 async def show_pending_wallet_at(callback: CallbackQuery, sessionmaker: async_sessionmaker, _, offset: int) -> None:
@@ -587,6 +713,56 @@ async def wallet_adjust_note(message: Message, state: FSMContext, sessionmaker: 
         await log_admin_action(session, message.from_user.id, "wallet_adjustment", details=f"{user_id}:{amount}:{note}")
     await state.clear()
     await message.answer(_("wallet_adjust_done"), reply_markup=admin_dashboard(_))
+
+
+@router.message(AdminStates.support_reply)
+async def support_inbox_reply(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    bot,
+    i18n,
+    _,
+) -> None:
+    assert message.from_user
+    if message.from_user.id not in set(settings.admin_telegram_ids):
+        await state.clear()
+        return
+    data = await state.get_data()
+    ticket_id = int(data["support_ticket_id"])
+    user_id = int(data["support_user_id"])
+    telegram_id = int(data["support_telegram_id"])
+    async with sessionmaker.begin() as session:
+        ticket = await support_ticket_by_id(session, ticket_id)
+        user = await session.get(User, user_id)
+        if not ticket or not user:
+            await message.answer(_("support_ticket_not_found"), reply_markup=admin_dashboard(_))
+            await state.clear()
+            return
+        try:
+            await bot.send_message(telegram_id, i18n.t("support_reply_intro", user.language))
+            await bot.copy_message(telegram_id, message.chat.id, message.message_id)
+        except Exception:
+            await message.answer(_("support_reply_failed"))
+            return
+        await add_support_message(
+            session,
+            ticket,
+            "admin",
+            message.from_user.id,
+            message.content_type,
+            message.message_id,
+            message.text or message.caption,
+        )
+        await log_admin_action(
+            session,
+            message.from_user.id,
+            "support_inbox_reply",
+            details=f"ticket_id={ticket_id}; user_id={user_id}; telegram_id={telegram_id}",
+        )
+    await state.clear()
+    await message.answer(_("support_reply_sent"), reply_markup=admin_dashboard(_))
 
 
 @router.message(AdminStates.search)

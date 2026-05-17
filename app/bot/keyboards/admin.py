@@ -19,6 +19,12 @@ class SupportReplyCb(CallbackData, prefix="suprep"):
     user_id: int
 
 
+class SupportTicketCb(CallbackData, prefix="suptik"):
+    action: str
+    ticket_id: int = 0
+    offset: int = 0
+
+
 class PackageAdminCb(CallbackData, prefix="admpkg"):
     action: str
     gb: int = 0
@@ -53,6 +59,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("pending_orders"), "admin:pending"),
         (_("wallet_topups"), "admin:wallet_topups"),
         (_("search_user"), "admin:search"),
+        (_("support_inbox"), "admin:support"),
         (_("order_history"), "admin:orders"),
         (_("active_services"), "admin:services"),
         (_("bulk_create"), "admin:bulk"),
@@ -203,6 +210,28 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
 def support_reply_keyboard(user_id: int, _) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("reply_to_support"), callback_data=SupportReplyCb(user_id=user_id))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def support_inbox_keyboard(tickets: list[tuple[int, str]], offset: int, total: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for ticket_id, label in tickets:
+        builder.button(text=label, callback_data=SupportTicketCb(action="view", ticket_id=ticket_id, offset=offset))
+    if offset > 0:
+        builder.button(text=_("prev_page"), callback_data=SupportTicketCb(action="page", offset=max(0, offset - 5)))
+    if offset + 5 < total:
+        builder.button(text=_("next_page"), callback_data=SupportTicketCb(action="page", offset=offset + 5))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def support_thread_keyboard(ticket_id: int, offset: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("reply_to_support"), callback_data=SupportTicketCb(action="reply", ticket_id=ticket_id, offset=offset))
+    builder.button(text=_("back"), callback_data=SupportTicketCb(action="page", offset=offset))
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(1)
     return builder.as_markup()

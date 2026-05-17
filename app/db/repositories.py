@@ -325,6 +325,41 @@ async def support_history(session: AsyncSession, user_id: int, limit: int = 6) -
     return list(reversed(list(result)))
 
 
+async def support_tickets(session: AsyncSession, limit: int = 10, offset: int = 0) -> list[SupportTicket]:
+    result = await session.scalars(
+        select(SupportTicket)
+        .options(selectinload(SupportTicket.user))
+        .order_by(SupportTicket.updated_at.desc(), SupportTicket.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(result)
+
+
+async def support_ticket_count(session: AsyncSession) -> int:
+    return int(await session.scalar(select(func.count(SupportTicket.id))) or 0)
+
+
+async def support_ticket_by_id(session: AsyncSession, ticket_id: int) -> SupportTicket | None:
+    return await session.scalar(
+        select(SupportTicket)
+        .options(selectinload(SupportTicket.user))
+        .where(SupportTicket.id == ticket_id)
+    )
+
+
+async def support_ticket_messages(
+    session: AsyncSession, ticket_id: int, limit: int = 10
+) -> list[SupportMessage]:
+    result = await session.scalars(
+        select(SupportMessage)
+        .where(SupportMessage.ticket_id == ticket_id)
+        .order_by(SupportMessage.id.desc())
+        .limit(limit)
+    )
+    return list(reversed(list(result)))
+
+
 def normalize_discount_code(code: str) -> str:
     return code.strip().upper().replace(" ", "")
 
