@@ -63,6 +63,15 @@ class BulkBatchStatus(StrEnum):
     partial = "partial"
 
 
+class ResellerBulkOrderStatus(StrEnum):
+    pending_payment = "pending_payment"
+    pending_admin = "pending_admin"
+    completed = "completed"
+    rejected = "rejected"
+    failed = "failed"
+    partially_failed = "partially_failed"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -178,6 +187,55 @@ class BulkAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     batch: Mapped[BulkBatch] = relationship(back_populates="accounts")
+
+
+class Reseller(Base):
+    __tablename__ = "resellers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResellerBulkOrder(Base):
+    __tablename__ = "reseller_bulk_orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    reseller_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    raw_request_text: Mapped[str] = mapped_column(Text)
+    parsed_items_json: Mapped[str] = mapped_column(Text)
+    total_accounts: Mapped[int] = mapped_column(Integer)
+    total_gb: Mapped[int] = mapped_column(Integer)
+    total_price: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(
+        String(32), default=ResellerBulkOrderStatus.pending_payment.value, index=True
+    )
+    payment_proof_file_id: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by_admin_id: Mapped[int | None] = mapped_column(BigInteger)
+    rejected_reason: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+    accounts: Mapped[list[ResellerBulkOrderAccount]] = relationship(back_populates="order")
+
+
+class ResellerBulkOrderAccount(Base):
+    __tablename__ = "reseller_bulk_order_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bulk_order_id: Mapped[int] = mapped_column(ForeignKey("reseller_bulk_orders.id"), index=True)
+    username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    quota_gb: Mapped[int] = mapped_column(Integer)
+    config_link: Mapped[str | None] = mapped_column(Text)
+    subscription_link: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    order: Mapped[ResellerBulkOrder] = relationship(back_populates="accounts")
 
 
 class BotSetting(Base):

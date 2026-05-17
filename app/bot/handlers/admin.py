@@ -19,6 +19,8 @@ from app.bot.keyboards.admin import (
     BroadcastSegmentCb,
     DiscountAdminCb,
     PackageAdminCb,
+    ResellerAdminCb,
+    ResellerBulkAdminCb,
     SupportTicketCb,
     admin_back_keyboard,
     admin_dashboard,
@@ -31,6 +33,8 @@ from app.bot.keyboards.admin import (
     pending_order_keyboard,
     pending_wallet_keyboard,
     reject_reason_keyboard,
+    reseller_bulk_order_keyboard,
+    resellers_keyboard,
     settings_keyboard,
     support_inbox_keyboard,
     support_thread_keyboard,
@@ -44,6 +48,7 @@ from app.db.models import (
     DiscountCode,
     Order,
     OrderStatus,
+    ResellerBulkOrderStatus,
     User,
     VPNService,
     VPNServiceStatus,
@@ -75,10 +80,18 @@ from app.db.repositories import (
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
+from app.services.bulk_order_service import (
+    generate_reseller_accounts,
+    generated_reseller_txt,
+    pending_reseller_bulk_orders,
+    recent_reseller_bulk_orders,
+    reseller_bulk_order_with_accounts,
+)
 from app.services.bulk_service import BulkPlanError, BulkService, parse_bulk_plan
 from app.services.discount_service import parse_discount_definition
 from app.services.payment_service import PaymentService, format_package_prices, parse_package_prices
 from app.services.referral_service import notify_referrer_about_reward
+from app.services.reseller_service import add_reseller, list_resellers, set_reseller_active
 from app.services.wallet_service import WalletService
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
 from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
@@ -104,6 +117,7 @@ class AdminStates(StatesGroup):
     bulk_name = State()
     bulk_plan = State()
     support_reply = State()
+    reseller_add = State()
 
 
 def register_admin_filter(settings: Settings) -> None:
@@ -840,6 +854,123 @@ async def admin_stats(callback: CallbackQuery, sessionmaker: async_sessionmaker,
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin:resellers")
+async def admin_resellers(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    async with sessionmaker() as session:
+        rows = await list_resellers(session)
+    text_lines = [
+        _("reseller_admin_line", telegram_id=r.telegram_id, name=r.name or "-", status=_("enabled") if r.is_active else _("disabled"))
+        for r in rows
+    ]
+    keyboard_rows = [(r.telegram_id, r.name or str(r.telegram_id), r.is_active) for r in rows]
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("resellers_title") + "\n\n" + ("\n".join(text_lines) if text_lines else "-"),
+        reply_markup=resellers_keyboard(keyboard_rows, _),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:reseller:add")
+async def ask_add_reseller(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.set_state(AdminStates.reseller_add)
+    await callback.message.edit_text(_("enter_reseller"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(ResellerAdminCb.filter())
+async def reseller_admin_action(
+    callback: CallbackQuery, callback_data: ResellerAdminCb, sessionmaker: async_sessionmaker, _
+) -> None:
+    async with sessionmaker.begin() as session:
+        if callback_data.action == "remove":
+            ok = await set_reseller_active(session, callback_data.telegram_id, False)
+        elif callback_data.action == "disable":
+            ok = await set_reseller_active(session, callback_data.telegram_id, False)
+        else:
+            ok = await set_reseller_active(session, callback_data.telegram_id, True)
+        if ok:
+            await log_admin_action(session, callback.from_user.id, f"reseller_{callback_data.action}", details=str(callback_data.telegram_id))
+    await callback.answer(_("done") if ok else _("user_not_found"), show_alert=not ok)
+    await admin_resellers(callback, sessionmaker, _)
+
+
+@router.message(AdminStates.reseller_add)
+async def add_reseller_message(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, _) -> None:
+    assert message.from_user
+    parts = (message.text or "").strip().split(maxsplit=1)
+    if not parts or not parts[0].isdigit():
+        await message.answer(_("invalid_value"), reply_markup=admin_back_keyboard(_))
+        return
+    telegram_id = int(parts[0])
+    name = parts[1] if len(parts) > 1 else None
+    async with sessionmaker.begin() as session:
+        await add_reseller(session, telegram_id, name)
+        await log_admin_action(session, message.from_user.id, "add_reseller", details=f"{telegram_id}:{name or ''}")
+    await state.clear()
+    await message.answer(_("reseller_saved"), reply_markup=admin_dashboard(_))
+
+
+@router.callback_query(F.data == "admin:reseller_orders")
+async def admin_reseller_orders(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    async with sessionmaker() as session:
+        orders = await recent_reseller_bulk_orders(session, limit=10)
+    if not orders:
+        await callback.message.edit_text(_("no_pending_reseller_orders"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+    else:
+        await callback.message.edit_text(_("reseller_orders_admin_title"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        for order in orders:
+            await callback.message.answer(  # type: ignore[union-attr]
+                _("reseller_admin_order_line", code=order.order_code, telegram_id=order.reseller_telegram_id, accounts=order.total_accounts, gb=order.total_gb, price=toman(order.total_price), status=order.status),
+                reply_markup=reseller_bulk_order_keyboard(order.id, _),
+            )
+    await callback.answer()
+
+
+@router.callback_query(ResellerBulkAdminCb.filter())
+async def reseller_bulk_admin_action(
+    callback: CallbackQuery,
+    callback_data: ResellerBulkAdminCb,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    bot,
+    _,
+) -> None:
+    async with sessionmaker.begin() as session:
+        order = await reseller_bulk_order_with_accounts(session, callback_data.order_id)
+        if not order:
+            await callback.answer(_("order_not_found"), show_alert=True)
+            return
+        if callback_data.action == "reject":
+            order.status = ResellerBulkOrderStatus.rejected.value
+            order.rejected_reason = "Rejected by admin"
+            await log_admin_action(session, callback.from_user.id, "reject_reseller_bulk_order", details=order.order_code)
+            await bot.send_message(order.reseller_telegram_id, _("reseller_order_rejected", order_code=order.order_code))
+            await callback.message.edit_text(_("order_rejected_admin", order_id=order.id), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+            await callback.answer()
+            return
+        if callback_data.action in {"approve", "retry"}:
+            ok, result = await generate_reseller_accounts(session, settings, order, callback.from_user.id)
+            await log_admin_action(session, callback.from_user.id, "approve_reseller_bulk_order", details=f"{order.order_code}:{ok}")
+            if not ok:
+                await callback.message.edit_text(_("reseller_generation_failed", error=result), reply_markup=reseller_bulk_order_keyboard(order.id, _))  # type: ignore[union-attr]
+                await callback.answer()
+                return
+            txt = result
+        elif callback_data.action == "resend":
+            successful = [account for account in order.accounts if not account.error_message]
+            if not successful:
+                await callback.answer(_("reseller_no_generated_file"), show_alert=True)
+                return
+            txt = generated_reseller_txt(order, successful)
+        else:
+            await callback.answer()
+            return
+    filename = f"{order.order_code}.txt"
+    await bot.send_document(order.reseller_telegram_id, BufferedInputFile(txt.encode("utf-8"), filename=filename))
+    await callback.message.edit_text(_("reseller_order_completed_admin", order_code=order.order_code), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin:settings")
 async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmaker: async_sessionmaker, _) -> None:
     from app.services.payment_service import PaymentService
@@ -858,6 +989,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  crypto_qr=_("configured") if await payment.crypto_ltc_qr_file_id(session) else "-",
                  ltc_rate=await payment.ltc_toman_rate(session),
                  referral_bonus=await payment.referral_bonus_gb(session),
+                 reseller_price=await payment.reseller_price_per_gb(session),
                  support=html_code(await payment.support_username(session)))
     await callback.message.edit_text(text, reply_markup=settings_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
@@ -919,6 +1051,7 @@ async def save_setting_value(
         "max_custom_gb",
         "ltc_toman_rate",
         "referral_bonus_gb",
+        "price_per_gb_reseller",
     }
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db.models import BulkAccount, BulkBatch, BulkBatchStatus, VPNServiceStatus
 from app.marzban.client import MarzbanClient
+from app.services.vpn_account_service import create_vpn_account
 from app.utils.validators import sanitize_username
 
 
@@ -144,7 +145,7 @@ class BulkService:
                         status=VPNServiceStatus.active.value,
                     )
                     try:
-                        remote = await marzban.create_user(username, item.gb)
+                        remote = await create_vpn_account(marzban, username, item.gb)
                         account.subscription_url = marzban.get_subscription_url(username, remote)
                         account.config_links_json = json.dumps(remote.links, ensure_ascii=False)
                     except Exception as exc:

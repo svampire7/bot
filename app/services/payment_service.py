@@ -71,3 +71,6 @@ class PaymentService:
 
     async def referral_bonus_gb(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "referral_bonus_gb", "2"))
+
+    async def reseller_price_per_gb(self, session: AsyncSession) -> int:
+        return int(await get_setting(session, "price_per_gb_reseller", str(self.settings.price_per_gb_reseller)))

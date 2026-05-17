@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     trial_expire_action: str = Field(default="disable", alias="TRIAL_EXPIRE_ACTION")
 
     price_per_gb_toman: int = Field(default=220_000, alias="PRICE_PER_GB_TOMAN")
+    price_per_gb_reseller: int = Field(default=180_000, alias="PRICE_PER_GB_RESELLER")
     package_prices_toman: str = Field(
         default="1:220000,3:600000,5:900000,10:1600000",
         alias="PACKAGE_PRICES_TOMAN",

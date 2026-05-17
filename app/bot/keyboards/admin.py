@@ -53,6 +53,16 @@ class WalletAdjustCb(CallbackData, prefix="admwadj"):
     user_id: int
 
 
+class ResellerAdminCb(CallbackData, prefix="admres"):
+    action: str
+    telegram_id: int = 0
+
+
+class ResellerBulkAdminCb(CallbackData, prefix="admrbo"):
+    action: str
+    order_id: int
+
+
 def admin_dashboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for text, data in [
@@ -63,6 +73,8 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("order_history"), "admin:orders"),
         (_("active_services"), "admin:services"),
         (_("bulk_create"), "admin:bulk"),
+        (_("manage_resellers"), "admin:resellers"),
+        (_("reseller_bulk_orders"), "admin:reseller_orders"),
         (_("add_traffic"), "admin:addtraffic"),
         (_("wallet_adjust"), "admin:walletadjust"),
         (_("disable_user"), "admin:disable"),
@@ -74,7 +86,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -201,9 +213,34 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_crypto_qr"), callback_data="admin:setqr:crypto_ltc_qr_file_id")
     builder.button(text=_("change_usdt_rate"), callback_data="admin:set:ltc_toman_rate")
     builder.button(text=_("change_referral_bonus"), callback_data="admin:set:referral_bonus_gb")
+    builder.button(text=_("change_reseller_price"), callback_data="admin:set:price_per_gb_reseller")
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
     builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)
+    return builder.as_markup()
+
+
+def resellers_keyboard(resellers: list[tuple[int, str, bool]], _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("add_reseller"), callback_data="admin:reseller:add")
+    for telegram_id, name, active in resellers:
+        label = _("disable_reseller") if active else _("enable_reseller")
+        action = "disable" if active else "enable"
+        builder.button(text=f"{label}: {name}", callback_data=ResellerAdminCb(action=action, telegram_id=telegram_id))
+        builder.button(text=_("remove_reseller"), callback_data=ResellerAdminCb(action="remove", telegram_id=telegram_id))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def reseller_bulk_order_keyboard(order_id: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("approve"), callback_data=ResellerBulkAdminCb(action="approve", order_id=order_id))
+    builder.button(text=_("reject"), callback_data=ResellerBulkAdminCb(action="reject", order_id=order_id))
+    builder.button(text=_("retry_order"), callback_data=ResellerBulkAdminCb(action="retry", order_id=order_id))
+    builder.button(text=_("resend_txt"), callback_data=ResellerBulkAdminCb(action="resend", order_id=order_id))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 

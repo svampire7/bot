@@ -40,8 +40,27 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("support"), callback_data="menu:support")
     builder.button(text=_("help"), callback_data="menu:help")
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
+    builder.button(text=_("reseller_panel"), callback_data="menu:reseller")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2)
+    return builder.as_markup()
+
+
+def reseller_menu_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("reseller_create_bulk_order"), callback_data="reseller:create")
+    builder.button(text=_("reseller_my_bulk_orders"), callback_data="reseller:orders")
+    builder.button(text=_("reseller_help"), callback_data="reseller:help")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def reseller_invoice_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("reseller_i_paid"), callback_data="reseller:paid")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()
 
 

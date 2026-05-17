@@ -192,6 +192,44 @@ Available actions:
 
 Every admin action is stored in `admin_action_logs`.
 
+## Reseller Panel
+
+Admins can add approved resellers from `/admin` -> `Manage Resellers`.
+Send the reseller Telegram ID and optional name:
+
+```text
+123456789 Reza Shop
+```
+
+Set the reseller price from `/admin` -> `Bot Settings` -> `Reseller Price`.
+
+Approved resellers use `Reseller Panel` from the main menu. Bulk order input:
+
+```text
+10x3
+3 x 5
+```
+
+This means 10 accounts with 3GB and 3 accounts with 5GB. The bot shows a summary,
+calculates `total_gb * price_per_gb_reseller`, asks for payment proof, then sends
+the order to admins. Admins approve from `/admin` -> `Bulk Orders`.
+
+Generated TXT example:
+
+```text
+Order ID: BULK-000123
+Reseller Telegram ID: 123456789
+Total Accounts: 13
+Total Traffic: 45GB
+
+--------------------------------
+Username: reseller123456789-3gb-001
+Quota: 3GB
+Config: vless://...
+Subscription: https://...
+--------------------------------
+```
+
 ## Recommended Client Apps
 
 The bot sends these after successful activation:

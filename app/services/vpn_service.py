@@ -11,6 +11,7 @@ from app.db.models import Order, OrderStatus, User, VPNService, VPNServiceStatus
 from app.db.repositories import active_service_for_user, get_discount_code, order_with_user_for_update
 from app.marzban.client import MarzbanClient
 from app.services.payment_service import PaymentService
+from app.services.vpn_account_service import create_vpn_account
 from app.utils.formatters import bytes_to_gb
 from app.utils.validators import sanitize_username
 
@@ -68,7 +69,7 @@ class VPNProvisioningService:
                         service = None
                 if not service:
                     username = sanitize_username(f"tg_{order.user.telegram_id}_{order.id}")
-                    created = await marzban.create_user(username, order.gb_amount)
+                    created = await create_vpn_account(marzban, username, order.gb_amount)
                     config_links = created.links
                     service = VPNService(
                         user_id=order.user_id,
