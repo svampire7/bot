@@ -42,6 +42,7 @@ services:
     env_file:
       - .env
     environment:
+      DATABASE_URL: postgresql+asyncpg://vpnbot:vpnbot@postgres:5432/vpnbot
       BACKUP_TIME: ${BACKUP_TIME:-03:30}
       BACKUP_TIMEZONE: ${BACKUP_TIMEZONE:-Asia/Tehran}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
