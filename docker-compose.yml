@@ -37,6 +37,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  db-backup:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    environment:
+      BACKUP_TIME: ${BACKUP_TIME:-03:30}
+      BACKUP_TIMEZONE: ${BACKUP_TIMEZONE:-Asia/Tehran}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - db_backups:/backups
+    command: >
+      sh -c "apk add --no-cache python3 py3-aiohttp tzdata gzip &&
+             python3 /app/scripts/telegram_db_backup.py"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
+  db_backups:

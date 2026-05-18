@@ -243,6 +243,33 @@ The bot sends these after successful activation:
 
 ## Troubleshooting
 
+## Daily Telegram Database Backup
+
+Docker Compose includes a `db-backup` service. It runs `pg_dump`, compresses the SQL
+backup, and sends it to every Telegram ID in `ADMIN_TELEGRAM_IDS`.
+
+Configure in `.env`:
+
+```env
+BACKUP_TIME=03:30
+BACKUP_TIMEZONE=Asia/Tehran
+BACKUP_RETENTION_DAYS=7
+```
+
+Start or update it with:
+
+```bash
+docker compose up -d db-backup
+```
+
+Test one backup manually:
+
+```bash
+docker compose run --rm -e BACKUP_RUN_ONCE=true db-backup
+```
+
+Backups are also kept in the Docker volume `db_backups` for the configured retention period.
+
 `bot exits immediately`
 
 - Check `BOT_TOKEN`.
