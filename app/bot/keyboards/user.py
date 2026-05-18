@@ -101,8 +101,10 @@ def back_to_menu_keyboard(_) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def invite_keyboard(_, invite_link: str) -> InlineKeyboardMarkup:
+def invite_keyboard(_, invite_link: str, reference_code: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if reference_code:
+        builder.button(text=_("copy_reference_code"), copy_text=CopyTextButton(text=reference_code))
     builder.button(text=_("copy_invite_link"), copy_text=CopyTextButton(text=invite_link))
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)

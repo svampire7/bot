@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,6 +25,23 @@ from app.db.models import (
 )
 
 
+async def _generate_card_reference_code(session: AsyncSession) -> str:
+    for _ in range(20):
+        code = str(100000 + secrets.randbelow(900000))
+        exists_code = await session.scalar(select(User.id).where(User.card_reference_code == code))
+        if not exists_code:
+            return code
+    raise RuntimeError("Could not generate unique card reference code")
+
+
+async def ensure_card_reference_code(session: AsyncSession, user: User) -> str:
+    if user.card_reference_code:
+        return user.card_reference_code
+    user.card_reference_code = await _generate_card_reference_code(session)
+    await session.flush()
+    return user.card_reference_code
+
+
 async def get_or_create_user(
     session: AsyncSession,
     telegram_id: int,
@@ -35,12 +53,14 @@ async def get_or_create_user(
     if result:
         result.telegram_username = username
         result.first_name = first_name
+        await ensure_card_reference_code(session, result)
         return result
     user = User(
         telegram_id=telegram_id,
         telegram_username=username,
         first_name=first_name,
         language=default_language,
+        card_reference_code=await _generate_card_reference_code(session),
     )
     session.add(user)
     await session.flush()
@@ -194,6 +214,51 @@ async def referral_stats(session: AsyncSession, user_id: int) -> dict[str, int]:
         "paid": int(paid or 0),
         "pending_bonus_gb": int(user.pending_referral_bonus_gb or 0) if user else 0,
     }
+
+
+async def user_is_known_for_card_access(session: AsyncSession, user_id: int) -> bool:
+    user = await session.get(User, user_id)
+    if not user:
+        return False
+    if user.card_access_unlocked:
+        return True
+    completed_order = await session.scalar(
+        select(exists().where(Order.user_id == user_id, Order.status == OrderStatus.completed.value))
+    )
+    if completed_order:
+        return True
+    active_service = await session.scalar(
+        select(exists().where(VPNService.user_id == user_id, VPNService.status == VPNServiceStatus.active.value))
+    )
+    if active_service:
+        return True
+    completed_topup = await session.scalar(
+        select(
+            exists().where(
+                WalletTransaction.user_id == user_id,
+                WalletTransaction.status == WalletTransactionStatus.completed.value,
+            )
+        )
+    )
+    return bool(completed_topup)
+
+
+async def unlock_card_access_with_reference(
+    session: AsyncSession, user: User, reference_code: str
+) -> User | None:
+    code = "".join(ch for ch in reference_code.strip() if ch.isdigit())
+    if not code:
+        return None
+    referrer = await session.scalar(
+        select(User).where(User.card_reference_code == code, User.id != user.id)
+    )
+    if not referrer or not await user_is_known_for_card_access(session, referrer.id):
+        return None
+    user.card_access_unlocked = True
+    if not user.referred_by_user_id:
+        user.referred_by_user_id = referrer.id
+    await session.flush()
+    return referrer
 
 
 async def create_crypto_quote(

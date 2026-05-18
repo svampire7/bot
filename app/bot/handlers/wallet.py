@@ -26,6 +26,8 @@ from app.db.repositories import (
     crypto_quote_for_update,
     get_or_create_user,
     order_by_crypto_tx_hash,
+    unlock_card_access_with_reference,
+    user_is_known_for_card_access,
     wallet_history,
     wallet_transaction_by_crypto_tx_hash,
 )
@@ -48,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 class WalletStates(StatesGroup):
     amount = State()
+    card_reference = State()
     receipt = State()
     crypto_tx = State()
 
@@ -111,6 +114,7 @@ async def wallet_amount_entered(
     settings: Settings,
     _,
 ) -> None:
+    assert message.from_user
     amount = parse_positive_int(message.text or "")
     if not amount:
         await message.answer(_("invalid_topup_amount"))
@@ -119,6 +123,22 @@ async def wallet_amount_entered(
     payment = PaymentService(settings)
     async with sessionmaker() as session:
         if data.get("wallet_payment_method") == "card":
+            user = await get_or_create_user(
+                session,
+                message.from_user.id,
+                message.from_user.username,
+                message.from_user.first_name,
+                settings.default_language,
+            )
+            card_locked = await payment.card_reference_required(session) and not await user_is_known_for_card_access(
+                session, user.id
+            )
+            await session.commit()
+            await state.update_data(amount_toman=amount)
+            if card_locked:
+                await state.set_state(WalletStates.card_reference)
+                await message.answer(_("card_reference_required"), reply_markup=back_to_menu_keyboard(_))
+                return
             card_number = await payment.card_number(session)
             text = _(
                 "wallet_card_instructions",
@@ -128,7 +148,6 @@ async def wallet_amount_entered(
                 bank=html_escape(await payment.bank_name(session)),
                 support=html_code(await payment.support_username(session)),
             )
-            await state.update_data(amount_toman=amount)
             await state.set_state(WalletStates.receipt)
             await message.answer(text, reply_markup=wallet_card_keyboard(_, card_number))
             return
@@ -163,6 +182,43 @@ async def wallet_amount_entered(
         await message.answer_photo(qr_file_id, caption=text, reply_markup=wallet_crypto_keyboard(_, wallet))
     else:
         await message.answer(text, reply_markup=wallet_crypto_keyboard(_, wallet))
+
+
+@router.message(WalletStates.card_reference)
+async def wallet_card_reference_entered(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    _,
+) -> None:
+    assert message.from_user
+    payment = PaymentService(settings)
+    data = await state.get_data()
+    async with sessionmaker.begin() as session:
+        user = await get_or_create_user(
+            session,
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name,
+            settings.default_language,
+        )
+        referrer = await unlock_card_access_with_reference(session, user, message.text or "")
+        if not referrer:
+            await message.answer(_("card_reference_invalid"), reply_markup=back_to_menu_keyboard(_))
+            return
+        card_number = await payment.card_number(session)
+        text = _(
+            "wallet_card_instructions",
+            amount=toman(int(data["amount_toman"])),
+            card_number=html_code(card_number),
+            card_holder=html_escape(await payment.card_holder_name(session)),
+            bank=html_escape(await payment.bank_name(session)),
+            support=html_code(await payment.support_username(session)),
+        )
+    await state.set_state(WalletStates.receipt)
+    await message.answer(_("card_reference_accepted"), reply_markup=back_to_menu_keyboard(_))
+    await message.answer(text, reply_markup=wallet_card_keyboard(_, card_number))
 
 
 @router.message(WalletStates.receipt)

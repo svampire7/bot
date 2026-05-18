@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     max_custom_gb: int = Field(default=1000, alias="MAX_CUSTOM_GB")
 
     card_number: str = Field(default="", alias="CARD_NUMBER")
+    card_reference_required: bool = Field(default=False, alias="CARD_REFERENCE_REQUIRED")
     card_holder_name: str = Field(default="", alias="CARD_HOLDER_NAME")
     bank_name: str = Field(default="", alias="BANK_NAME")
     support_username: str = Field(default="", alias="SUPPORT_USERNAME")

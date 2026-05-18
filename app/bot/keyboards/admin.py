@@ -207,6 +207,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("package_editor"), callback_data="admin:packages")
     builder.button(text=_("discount_codes"), callback_data="admin:discounts")
     builder.button(text=_("change_card"), callback_data="admin:set:card_number")
+    builder.button(text=_("change_card_reference_gate"), callback_data="admin:set:card_reference_required")
     builder.button(text=_("change_card_holder"), callback_data="admin:set:card_holder_name")
     builder.button(text=_("change_bank"), callback_data="admin:set:bank_name")
     builder.button(text=_("change_crypto_wallet"), callback_data="admin:set:crypto_ltc_wallet")

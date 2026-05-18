@@ -84,6 +84,8 @@ class User(Base):
     referred_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     referral_bonus_awarded: Mapped[bool] = mapped_column(Boolean, default=False)
     pending_referral_bonus_gb: Mapped[int] = mapped_column(Integer, default=0)
+    card_reference_code: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    card_access_unlocked: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     has_used_trial: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     trial_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     trial_expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

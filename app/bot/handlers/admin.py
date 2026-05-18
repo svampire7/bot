@@ -75,6 +75,7 @@ from app.db.repositories import (
     support_ticket_messages,
     support_tickets,
     user_order_history,
+    user_is_known_for_card_access,
     wallet_transaction_for_update,
     wallet_balance,
 )
@@ -574,6 +575,8 @@ async def show_user_profile(callback: CallbackQuery, session, user_id: int, _) -
              username=user.telegram_username or "-",
              language=user.language,
              service=service_label,
+             reference_code=user.card_reference_code or "-",
+             card_access=_("enabled") if await user_is_known_for_card_access(session, user.id) else _("disabled"),
              balance=toman(balance),
              total_gb=int(total_gb or 0))
     await callback.message.answer(text, reply_markup=user_actions(user.id, _))  # type: ignore[union-attr]
@@ -983,6 +986,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
                  card=html_code(await payment.card_number(session)),
+                 card_gate=_("enabled") if await payment.card_reference_required(session) else _("disabled"),
                  card_holder=html_code(await payment.card_holder_name(session)),
                  bank=html_code(await payment.bank_name(session)),
                  crypto_wallet=html_code(await payment.crypto_ltc_wallet(session)),
@@ -1055,9 +1059,16 @@ async def save_setting_value(
         "price_per_gb_reseller",
         "min_reseller_bulk_gb",
     }
+    boolean_keys = {"card_reference_required"}
     if key in numeric_keys and (parse_positive_int(value) is None):
         await message.answer(_("invalid_value"))
         return
+    if key in boolean_keys:
+        normalized = value.strip().lower()
+        if normalized not in {"1", "0", "true", "false", "yes", "no", "on", "off", "enabled", "disabled"}:
+            await message.answer(_("invalid_boolean_value"))
+            return
+        value = "1" if normalized in {"1", "true", "yes", "on", "enabled"} else "0"
     if key == "package_prices_toman":
         try:
             value = format_package_prices(parse_package_prices(value))

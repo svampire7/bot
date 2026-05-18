@@ -42,12 +42,15 @@ MARZBAN_PASSWORD=secret
 MARZBAN_INBOUND_ID_OR_PROFILE=3
 
 CARD_NUMBER=6037...
+CARD_REFERENCE_REQUIRED=false
 CARD_HOLDER_NAME=Your Name
 BANK_NAME=Your Bank
 SUPPORT_USERNAME=@support
 ```
 
 The default price is `220000` Toman per GB. Custom package limits are controlled by `MIN_CUSTOM_GB` and `MAX_CUSTOM_GB`.
+
+`CARD_REFERENCE_REQUIRED=false` keeps card transfer visible to everyone. When enabled from `.env` or Admin Settings, new users must enter a valid reference code from an already-known user before the bot shows card details. LTC wallet top-up stays visible without a reference code.
 
 If your server cannot reach `https://api.telegram.org`, set `TELEGRAM_PROXY_URL` to an HTTP/SOCKS proxy URL supported by aiohttp, or deploy on a server/network with Telegram API access.
 
@@ -101,6 +104,22 @@ docker compose run --rm bot alembic revision --autogenerate -m "change message"
 6. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
 7. If Marzban succeeds, order becomes `completed` and the user receives service data.
 8. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
+
+## Card Reference Gate
+
+Admins can enable or disable the card-number gate from:
+
+`/admin` → `Settings` → `Card Gate`
+
+Accepted values are `1`/`0` or `on`/`off`.
+
+When enabled:
+
+- New users can still see and use Litecoin wallet charging.
+- Card transfer asks for a reference code before showing the card number.
+- Every user has a personal reference code in `Invite Friends`.
+- A reference code is accepted only if it belongs to an already-known user, meaning a user with a completed order, active service, completed wallet top-up, or previously unlocked card access.
+- After a valid code is entered once, card access stays unlocked for that Telegram user.
 
 ## Marzban Integration
 
