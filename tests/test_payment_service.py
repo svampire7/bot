@@ -13,6 +13,11 @@ def test_admin_boolean_setting_normalization() -> None:
     assert normalize_admin_setting_value("card_reference_required", "0") == "0"
 
 
+def test_admin_ltc_bonus_allows_zero() -> None:
+    assert normalize_admin_setting_value("crypto_ltc_bonus_percent", "0") == "0"
+    assert normalize_admin_setting_value("crypto_ltc_bonus_percent", "10") == "10"
+
+
 def test_admin_boolean_setting_rejects_invalid_value() -> None:
     try:
         normalize_admin_setting_value("card_reference_required", "maybe")

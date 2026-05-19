@@ -71,6 +71,15 @@ class PaymentService:
     async def ltc_toman_rate(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "ltc_toman_rate", str(self.settings.ltc_toman_rate)))
 
+    async def crypto_ltc_bonus_percent(self, session: AsyncSession) -> int:
+        return int(
+            await get_setting(
+                session,
+                "crypto_ltc_bonus_percent",
+                str(self.settings.crypto_ltc_bonus_percent),
+            )
+        )
+
     async def min_custom_gb(self, session: AsyncSession) -> int:
         return int(await get_setting(session, "min_custom_gb", str(self.settings.min_custom_gb)))
 

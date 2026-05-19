@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_UP
+from typing import Any
 
 import aiohttp
 
@@ -30,6 +31,16 @@ def toman_to_ltc(price_toman: int, ltc_toman_rate: int) -> Decimal:
     return (Decimal(price_toman) / Decimal(ltc_toman_rate)).quantize(
         Decimal("0.00000001"), rounding=ROUND_UP
     )
+
+
+def crypto_bonus_amount(amount_toman: int, bonus_percent: int) -> int:
+    if bonus_percent <= 0:
+        return 0
+    return int((Decimal(amount_toman) * Decimal(bonus_percent) / Decimal(100)).to_integral_value(rounding=ROUND_UP))
+
+
+def crypto_credit_amount(amount_toman: int, bonus_percent: int) -> int:
+    return amount_toman + crypto_bonus_amount(amount_toman, bonus_percent)
 
 
 def normalize_tx_hash(tx_hash: str) -> str:
@@ -73,6 +84,63 @@ class LitecoinClient:
             amount_ltc=(Decimal(total_satoshi) / SATOSHI_PER_LTC),
             confirmations=confirmations,
         )
+
+
+class LitecoinPriceClient:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    async def ltc_toman_rate(self) -> int:
+        url = self.settings.ltc_price_api_url.strip()
+        if not url:
+            raise CryptoPaymentError("LTC price API is not configured")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                if response.status >= 500:
+                    raise CryptoPaymentError("Temporary LTC price API error")
+                if response.status >= 400:
+                    text = await response.text()
+                    raise CryptoPaymentError(f"LTC price API error {response.status}: {text[:200]}")
+                payload = await response.json()
+        return parse_ltc_toman_rate(payload)
+
+
+def parse_ltc_toman_rate(payload: dict[str, Any]) -> int:
+    wallex_rate = (
+        payload.get("result", {})
+        .get("symbols", {})
+        .get("LTCTMN", {})
+        .get("stats", {})
+        .get("lastPrice")
+    )
+    if wallex_rate is not None:
+        numeric = Decimal(str(wallex_rate))
+        if numeric <= 0:
+            raise CryptoPaymentError("LTC price is invalid")
+        return int(numeric.to_integral_value(rounding=ROUND_UP))
+
+    rate = payload.get("litecoin", {}).get("irr")
+    if rate is None:
+        rate = payload.get("ltc_irr") or payload.get("irr") or payload.get("toman")
+    if rate is None:
+        raise CryptoPaymentError("LTC price response did not include IRR/Toman price")
+    numeric = Decimal(str(rate))
+    # CoinGecko returns Iranian Rial. If another configured API already returns Toman,
+    # admins can expose it as {"toman": ...}.
+    if "toman" not in payload:
+        numeric = numeric / Decimal(10)
+    if numeric <= 0:
+        raise CryptoPaymentError("LTC price is invalid")
+    return int(numeric.to_integral_value(rounding=ROUND_UP))
+
+
+async def live_ltc_toman_rate(settings: Settings, fallback_rate: int | None = None) -> int:
+    try:
+        return await LitecoinPriceClient(settings).ltc_toman_rate()
+    except Exception:
+        if fallback_rate and fallback_rate > 0:
+            return fallback_rate
+        raise
 
 
 async def verify_ltc_payment(

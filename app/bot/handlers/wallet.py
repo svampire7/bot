@@ -34,6 +34,9 @@ from app.db.repositories import (
 from app.db.models import CryptoPaymentQuoteStatus
 from app.services.crypto_service import (
     CryptoPaymentError,
+    crypto_bonus_amount,
+    crypto_credit_amount,
+    live_ltc_toman_rate,
     normalize_tx_hash,
     toman_to_ltc,
     validate_tx_hash,
@@ -153,12 +156,21 @@ async def wallet_amount_entered(
             return
         wallet = await payment.crypto_ltc_wallet(session)
         qr_file_id = await payment.crypto_ltc_qr_file_id(session)
-        rate = await payment.ltc_toman_rate(session)
+        fallback_rate = await payment.ltc_toman_rate(session)
+        bonus_percent = await payment.crypto_ltc_bonus_percent(session)
     if not wallet:
         await message.answer(_("crypto_not_configured"), reply_markup=main_menu(_))
         await state.clear()
         return
+    try:
+        rate = await live_ltc_toman_rate(settings, fallback_rate)
+    except CryptoPaymentError as exc:
+        await message.answer(_("crypto_price_failed", error=html_escape(str(exc))), reply_markup=main_menu(_))
+        await state.clear()
+        return
     expected = toman_to_ltc(amount, rate)
+    bonus_amount = crypto_bonus_amount(amount, bonus_percent)
+    credit_amount = crypto_credit_amount(amount, bonus_percent)
     async with sessionmaker.begin() as session:
         user = await get_or_create_user(
             session,
@@ -167,13 +179,23 @@ async def wallet_amount_entered(
             message.from_user.first_name,
             settings.default_language,
         )
-        quote = await create_crypto_quote(session, user.id, amount, str(expected), rate, wallet)
-    await state.update_data(amount_toman=amount, crypto_expected_ltc=str(expected), quote_id=quote.id)
+        quote = await create_crypto_quote(session, user.id, credit_amount, str(expected), rate, wallet)
+    await state.update_data(
+        amount_toman=credit_amount,
+        crypto_pay_amount_toman=amount,
+        crypto_bonus_toman=bonus_amount,
+        crypto_bonus_percent=bonus_percent,
+        crypto_expected_ltc=str(expected),
+        quote_id=quote.id,
+    )
     await state.set_state(WalletStates.crypto_tx)
     text = _(
         "wallet_ltc_instructions",
         quote_id=quote.id,
-        amount=toman(amount),
+        pay_amount=toman(amount),
+        credit_amount=toman(credit_amount),
+        bonus_amount=toman(bonus_amount),
+        bonus_percent=bonus_percent,
         ltc=str(expected),
         wallet=html_code(wallet),
         rate=toman(rate),
@@ -337,6 +359,7 @@ async def wallet_crypto_tx_submitted(
             tx_hash,
             str(transfer.amount_ltc),
             quote_id=int(data["quote_id"]),
+            note=f"quote #{data['quote_id']}; paid={data.get('crypto_pay_amount_toman')}; bonus={data.get('crypto_bonus_toman', 0)}",
         )
         balance = await WalletService().balance(session, user.id)
     await state.clear()

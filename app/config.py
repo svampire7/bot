@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     crypto_ltc_wallet: str = Field(default="", alias="CRYPTO_LTC_WALLET")
     crypto_ltc_qr_file_id: str = Field(default="", alias="CRYPTO_LTC_QR_FILE_ID")
     ltc_toman_rate: int = Field(default=7_000_000, alias="LTC_TOMAN_RATE")
+    crypto_ltc_bonus_percent: int = Field(default=0, alias="CRYPTO_LTC_BONUS_PERCENT")
+    ltc_price_api_url: str = Field(
+        default="https://api.wallex.ir/v1/markets",
+        alias="LTC_PRICE_API_URL",
+    )
     litecoin_api_base_url: str = Field(
         default="https://api.blockcypher.com/v1/ltc/main",
         alias="LITECOIN_API_BASE_URL",

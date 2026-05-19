@@ -1023,6 +1023,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  crypto_wallet=html_code(await payment.crypto_ltc_wallet(session)),
                  crypto_qr=_("configured") if await payment.crypto_ltc_qr_file_id(session) else "-",
                  ltc_rate=await payment.ltc_toman_rate(session),
+                 ltc_bonus=await payment.crypto_ltc_bonus_percent(session),
                  referral_bonus=await payment.referral_bonus_gb(session),
                  reseller_price=await payment.reseller_price_per_gb(session),
                  reseller_min_gb=await payment.min_reseller_bulk_gb(session),

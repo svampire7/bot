@@ -46,6 +46,12 @@ CARD_REFERENCE_REQUIRED=false
 CARD_HOLDER_NAME=Your Name
 BANK_NAME=Your Bank
 SUPPORT_USERNAME=@support
+CRYPTO_LTC_WALLET=
+CRYPTO_LTC_QR_FILE_ID=
+LTC_PRICE_API_URL=https://api.wallex.ir/v1/markets
+LTC_TOMAN_RATE=7000000
+CRYPTO_LTC_BONUS_PERCENT=0
+CRYPTO_LTC_BONUS_PERCENT=0
 ```
 
 The default price is `220000` Toman per GB. Custom package limits are controlled by `MIN_CUSTOM_GB` and `MAX_CUSTOM_GB`.
@@ -158,6 +164,18 @@ When enabled:
 - Every user has a personal reference code in `Invite Friends`.
 - A reference code is accepted only if it belongs to an already-known user, meaning a user with a completed order, active service, completed wallet top-up, or previously unlocked card access.
 - After a valid code is entered once, card access stays unlocked for that Telegram user.
+
+## Live LTC Wallet Top-up Pricing
+
+When a user charges their wallet with Litecoin, the bot fetches the live LTC/Toman price from `LTC_PRICE_API_URL` and locks that rate into a 30-minute quote. The transaction hash is verified against the exact LTC amount from that quote, so the user’s wallet is credited in Toman/Rial terms even though they paid with LTC.
+
+`LTC_TOMAN_RATE` is a manual fallback rate if the live price API is temporarily unavailable.
+
+Admins can adjust the crypto wallet bonus from:
+
+`/admin` → `Settings` → `LTC Bonus`
+
+For example, with `10`, if the user pays for `900,000` Toman, their wallet receives `990,000` Toman after the LTC payment is verified.
 
 ## Marzban Integration
 

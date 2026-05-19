@@ -47,6 +47,7 @@ class WalletService:
         tx_hash: str,
         crypto_amount: str,
         quote_id: int | None = None,
+        note: str | None = None,
     ) -> WalletTransaction:
         tx = WalletTransaction(
             user_id=user_id,
@@ -56,7 +57,7 @@ class WalletService:
             payment_method="crypto_ltc",
             crypto_tx_hash=tx_hash,
             crypto_amount=crypto_amount,
-            admin_note=f"quote #{quote_id}" if quote_id else None,
+            admin_note=note or (f"quote #{quote_id}" if quote_id else None),
         )
         session.add(tx)
         await session.flush()
