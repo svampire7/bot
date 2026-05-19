@@ -105,6 +105,7 @@ This checks database and Redis connectivity and shows broadcast batch settings.
 Run tests and lint checks:
 
 ```bash
+python -m pip install -r requirements-dev.txt
 python -m pytest
 python -m ruff check app tests
 ```
