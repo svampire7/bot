@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
@@ -29,10 +30,17 @@ class I18n:
 
 
 class I18nMiddleware(BaseMiddleware):
-    def __init__(self, sessionmaker: async_sessionmaker, settings: Settings, i18n: I18n) -> None:
+    def __init__(
+        self,
+        sessionmaker: async_sessionmaker,
+        settings: Settings,
+        i18n: I18n,
+        redis: Redis | None = None,
+    ) -> None:
         self.sessionmaker = sessionmaker
         self.settings = settings
         self.i18n = i18n
+        self.redis = redis
 
     async def __call__(
         self,
@@ -43,12 +51,18 @@ class I18nMiddleware(BaseMiddleware):
         language = self.settings.default_language
         user = data.get("event_from_user")
         if user:
-            async with self.sessionmaker() as session:
-                db_user = await get_user_by_telegram_id(session, user.id)
-                if db_user:
-                    language = db_user.language
+            cache_key = f"user_lang:{user.id}"
+            cached = await self.redis.get(cache_key) if self.redis else None
+            if cached in self.i18n.messages:
+                language = cached
+            else:
+                async with self.sessionmaker() as session:
+                    db_user = await get_user_by_telegram_id(session, user.id)
+                    if db_user:
+                        language = db_user.language
+                if self.redis:
+                    await self.redis.set(cache_key, language, ex=3600)
         data["i18n"] = self.i18n
         data["lang"] = language
         data["_"] = lambda key, **kwargs: self.i18n.t(key, language, **kwargs)
         return await handler(event, data)
-

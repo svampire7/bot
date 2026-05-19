@@ -15,7 +15,7 @@ from app.db.models import (
     ResellerBulkOrderStatus,
 )
 from app.marzban.client import MarzbanClient
-from app.services.bulk_service import BulkPlanItem, export_bulk_csv, parse_bulk_plan
+from app.services.bulk_service import BulkPlanItem, parse_bulk_plan
 from app.services.payment_service import PaymentService
 from app.services.vpn_account_service import create_vpn_account
 from app.utils.validators import sanitize_username

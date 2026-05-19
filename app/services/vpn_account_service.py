@@ -15,5 +15,5 @@ async def create_vpn_account(
     if expire_days is None:
         return await marzban.create_user(username, quota_gb)
     expire_at = datetime.now(timezone.utc) + timedelta(days=expire_days)
-    created = await marzban.create_user(username, quota_gb)
+    await marzban.create_user(username, quota_gb)
     return await marzban.update_user(username, {"expire": int(expire_at.timestamp()), "status": "active"})

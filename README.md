@@ -80,6 +80,43 @@ Stop:
 docker compose down
 ```
 
+## Production Hardening
+
+The bot includes a few safeguards for larger usage:
+
+- User language is cached in Redis to avoid a database lookup on every Telegram update.
+- Editable bot settings are cached briefly in-process and invalidated after admin changes.
+- Marzban login tokens and inbound/template data are cached to reduce panel API calls.
+- Broadcasts are sent in controlled batches. Configure with:
+
+```env
+BROADCAST_BATCH_SIZE=25
+BROADCAST_BATCH_DELAY_SECONDS=1
+DATABASE_POOL_SIZE=10
+DATABASE_MAX_OVERFLOW=20
+```
+
+Admins can check runtime health from:
+
+`/admin` → `System Status`
+
+This checks database and Redis connectivity and shows broadcast batch settings.
+
+Run tests and lint checks:
+
+```bash
+python -m pytest
+python -m ruff check app tests
+```
+
+For safer server updates, use:
+
+```bash
+scripts/deploy_safe.sh
+```
+
+It creates a Telegram database backup before pulling code and rebuilding the bot container.
+
 ## Run Migrations Manually
 
 Inside the bot container:

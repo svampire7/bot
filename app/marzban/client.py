@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import json as jsonlib
+import time
 from datetime import datetime
 from typing import Any
 
@@ -20,10 +21,15 @@ class MarzbanAPIError(RuntimeError):
 
 
 class MarzbanClient:
+    _token_cache: dict[tuple[str, str], str] = {}
+    _inbounds_cache: dict[str, tuple[float, dict[str, list[str]]]] = {}
+    _inbounds_ttl_seconds = 300
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.base_url = settings.marzban_base_url.rstrip("/")
-        self.token = settings.marzban_token
+        self._token_key = (self.base_url, settings.marzban_username)
+        self.token = settings.marzban_token or self._token_cache.get(self._token_key)
         self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self) -> "MarzbanClient":
@@ -49,6 +55,7 @@ class MarzbanClient:
         self.token = payload.get("access_token") or payload.get("token")
         if not self.token:
             raise MarzbanAPIError("Marzban login did not return a token")
+        self._token_cache[self._token_key] = self.token
 
     async def _raw_request(
         self,
@@ -73,6 +80,7 @@ class MarzbanClient:
         ) as response:
             if response.status == 401 and auth:
                 self.token = None
+                self._token_cache.pop(self._token_key, None)
                 await self.authenticate()
                 return await self._raw_request(method, path, json=json, data=data, auth=True)
             text = await response.text()
@@ -95,21 +103,29 @@ class MarzbanClient:
         value = self.settings.marzban_inbound_id_or_profile.strip()
         if not value:
             return {}
+        cached = self._inbounds_cache.get(value)
+        if cached and cached[0] > time.monotonic():
+            return {protocol: list(tags) for protocol, tags in cached[1].items()}
         if value.isdigit():
             template = await self.request("GET", f"/api/user_template/{value}")
             inbounds = template.get("inbounds") or {}
             if not isinstance(inbounds, dict):
                 raise MarzbanAPIError(f"Template {value} has invalid inbounds")
-            return {str(protocol): list(tags) for protocol, tags in inbounds.items()}
+            resolved = {str(protocol): list(tags) for protocol, tags in inbounds.items()}
+            self._inbounds_cache[value] = (time.monotonic() + self._inbounds_ttl_seconds, resolved)
+            return resolved
         if value.startswith("{"):
             parsed = jsonlib.loads(value)
-            return {str(protocol): list(tags) for protocol, tags in parsed.items()}
+            resolved = {str(protocol): list(tags) for protocol, tags in parsed.items()}
+            self._inbounds_cache[value] = (time.monotonic() + self._inbounds_ttl_seconds, resolved)
+            return resolved
         inbounds: dict[str, list[str]] = {}
         for item in value.split(";"):
             if not item.strip() or ":" not in item:
                 continue
             protocol, tags = item.split(":", 1)
             inbounds[protocol.strip()] = [tag.strip() for tag in tags.split(",") if tag.strip()]
+        self._inbounds_cache[value] = (time.monotonic() + self._inbounds_ttl_seconds, inbounds)
         return inbounds
 
     async def _user_payload(self, username: str, data_limit_bytes: int, expire: int = 0) -> dict[str, Any]:

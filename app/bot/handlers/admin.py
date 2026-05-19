@@ -52,7 +52,6 @@ from app.db.models import (
     User,
     VPNService,
     VPNServiceStatus,
-    WalletTransaction,
     WalletTransactionStatus,
 )
 from app.db.repositories import (
@@ -69,7 +68,6 @@ from app.db.repositories import (
     pending_wallet_topups,
     search_user,
     set_setting,
-    stats,
     support_ticket_by_id,
     support_ticket_count,
     support_ticket_messages,
@@ -81,16 +79,17 @@ from app.db.repositories import (
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
+from app.services.admin_settings_service import AdminSettingValidationError, normalize_admin_setting_value
 from app.services.bulk_order_service import (
     generate_reseller_accounts,
     generated_reseller_txt,
-    pending_reseller_bulk_orders,
     recent_reseller_bulk_orders,
     reseller_bulk_order_with_accounts,
 )
 from app.services.bulk_service import BulkPlanError, BulkService, parse_bulk_plan
+from app.services.broadcast_service import load_broadcast_recipients, send_broadcast
 from app.services.discount_service import parse_discount_definition
-from app.services.payment_service import PaymentService, format_package_prices, parse_package_prices
+from app.services.payment_service import PaymentService, format_package_prices
 from app.services.referral_service import notify_referrer_about_reward
 from app.services.reseller_service import add_reseller, list_resellers, set_reseller_active
 from app.services.wallet_service import WalletService
@@ -857,6 +856,38 @@ async def admin_stats(callback: CallbackQuery, sessionmaker: async_sessionmaker,
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin:system")
+async def admin_system_status(
+    callback: CallbackQuery, sessionmaker: async_sessionmaker, redis, settings: Settings, _
+) -> None:
+    started = time.monotonic()
+    db_ok = False
+    redis_ok = False
+    async with sessionmaker() as session:
+        try:
+            await session.scalar(select(1))
+            db_ok = True
+        except Exception:
+            db_ok = False
+    try:
+        redis_ok = bool(await redis.ping())
+    except Exception:
+        redis_ok = False
+    latency_ms = int((time.monotonic() - started) * 1000)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _(
+            "system_status_text",
+            db=_("ok") if db_ok else _("failed"),
+            redis=_("ok") if redis_ok else _("failed"),
+            latency=latency_ms,
+            broadcast_batch=settings.broadcast_batch_size,
+            broadcast_delay=settings.broadcast_batch_delay_seconds,
+        ),
+        reply_markup=admin_dashboard(_),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin:resellers")
 async def admin_resellers(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
     async with sessionmaker() as session:
@@ -1049,32 +1080,11 @@ async def save_setting_value(
     assert message.from_user
     data = await state.get_data()
     key = data["setting_key"]
-    value = (message.text or "").strip()
-    numeric_keys = {
-        "price_per_gb_toman",
-        "min_custom_gb",
-        "max_custom_gb",
-        "ltc_toman_rate",
-        "referral_bonus_gb",
-        "price_per_gb_reseller",
-        "min_reseller_bulk_gb",
-    }
-    boolean_keys = {"card_reference_required"}
-    if key in numeric_keys and (parse_positive_int(value) is None):
-        await message.answer(_("invalid_value"))
+    try:
+        value = normalize_admin_setting_value(key, message.text or "")
+    except AdminSettingValidationError as exc:
+        await message.answer(_(str(exc)))
         return
-    if key in boolean_keys:
-        normalized = value.strip().lower()
-        if normalized not in {"1", "0", "true", "false", "yes", "no", "on", "off", "enabled", "disabled"}:
-            await message.answer(_("invalid_boolean_value"))
-            return
-        value = "1" if normalized in {"1", "true", "yes", "on", "enabled"} else "0"
-    if key == "package_prices_toman":
-        try:
-            value = format_package_prices(parse_package_prices(value))
-        except ValueError:
-            await message.answer(_("invalid_package_prices"))
-            return
     async with sessionmaker.begin() as session:
         await set_setting(session, key, value)
         await log_admin_action(session, message.from_user.id, "update_bot_setting", details=f"{key}=***")
@@ -1259,41 +1269,32 @@ async def broadcast_text(message: Message, state: FSMContext, _) -> None:
 
 @router.callback_query(F.data == "admin:broadcast:confirm")
 async def broadcast_confirm(
-    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, bot, _
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, bot, settings: Settings, _
 ) -> None:
     assert callback.from_user
     data = await state.get_data()
     text = data.get("text", "")
     segment = data.get("broadcast_segment", "all")
-    ok = fail = 0
     async with sessionmaker() as session:
-        stmt = select(User).where(User.is_blocked.is_(False))
-        if segment == "active":
-            stmt = stmt.join(VPNService).where(VPNService.status == VPNServiceStatus.active.value)
-        elif segment == "no_service":
-            stmt = stmt.outerjoin(VPNService).where(VPNService.id.is_(None))
-        elif segment in {"fa", "en"}:
-            stmt = stmt.where(User.language == segment)
-        elif segment == "wallet_positive":
-            subq = (
-                select(WalletTransaction.user_id)
-                .where(WalletTransaction.status == WalletTransactionStatus.completed.value)
-                .group_by(WalletTransaction.user_id)
-                .having(func.sum(WalletTransaction.amount_toman) > 0)
-            )
-            stmt = stmt.where(User.id.in_(subq))
-        users = list(await session.scalars(stmt.distinct()))
-        for user in users:
-            try:
-                await bot.send_message(user.telegram_id, text)
-                ok += 1
-            except Exception:
-                fail += 1
-        await log_admin_action(session, callback.from_user.id, "broadcast", details=f"{segment}: {text[:900]}")
+        telegram_ids = await load_broadcast_recipients(session, segment)
+        await log_admin_action(session, callback.from_user.id, "broadcast_started", details=f"{segment}: {text[:900]}")
         await session.commit()
-    await state.clear()
-    await callback.message.edit_text(_("broadcast_done", ok=ok, fail=fail), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("broadcast_started", count=len(telegram_ids)),
+        reply_markup=admin_dashboard(_),
+    )
     await callback.answer()
+    ok, fail = await send_broadcast(
+        bot,
+        telegram_ids,
+        text,
+        batch_size=settings.broadcast_batch_size,
+        batch_delay_seconds=settings.broadcast_batch_delay_seconds,
+    )
+    async with sessionmaker.begin() as session:
+        await log_admin_action(session, callback.from_user.id, "broadcast_done", details=f"{segment}: ok={ok}; fail={fail}")
+    await state.clear()
+    await bot.send_message(callback.from_user.id, _("broadcast_done", ok=ok, fail=fail))
 
 
 @router.callback_query(F.data.in_({"admin:addtraffic", "admin:disable", "admin:enable", "admin:delete"}))

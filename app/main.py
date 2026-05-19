@@ -46,7 +46,7 @@ async def main() -> None:
     dp = Dispatcher(storage=storage)
     i18n = I18n(Path("app/bot/i18n"), settings.default_language)
 
-    dp.update.middleware(I18nMiddleware(SessionLocal, settings, i18n))
+    dp.update.middleware(I18nMiddleware(SessionLocal, settings, i18n, redis))
     dp.message.middleware(ThrottlingMiddleware(redis, default_limit_seconds=1))
 
     admin.register_admin_filter(settings)

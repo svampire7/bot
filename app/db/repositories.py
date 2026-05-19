@@ -23,6 +23,7 @@ from app.db.models import (
     WalletTransaction,
     WalletTransactionStatus,
 )
+from app.services.settings_cache import settings_cache
 
 
 async def _generate_card_reference_code(session: AsyncSession) -> str:
@@ -448,8 +449,13 @@ async def list_discount_codes(session: AsyncSession, limit: int = 10) -> list[Di
 
 
 async def get_setting(session: AsyncSession, key: str, default: str) -> str:
+    cached = settings_cache.get(key)
+    if cached is not None:
+        return cached
     setting = await session.get(BotSetting, key)
-    return setting.value if setting else default
+    value = setting.value if setting else default
+    settings_cache.set(key, value)
+    return value
 
 
 async def set_setting(session: AsyncSession, key: str, value: str) -> None:
@@ -458,6 +464,7 @@ async def set_setting(session: AsyncSession, key: str, value: str) -> None:
         setting.value = value
     else:
         session.add(BotSetting(key=key, value=value))
+    settings_cache.invalidate(key)
 
 
 async def stats(session: AsyncSession) -> dict[str, int]:

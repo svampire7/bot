@@ -12,8 +12,12 @@ class Settings(BaseSettings):
     bot_token: str = Field(alias="BOT_TOKEN")
     admin_telegram_ids_raw: str = Field(default="", alias="ADMIN_TELEGRAM_IDS")
     database_url: str = Field(alias="DATABASE_URL")
+    database_pool_size: int = Field(default=10, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=20, alias="DATABASE_MAX_OVERFLOW")
     redis_url: str = Field(alias="REDIS_URL")
     telegram_proxy_url: str | None = Field(default=None, alias="TELEGRAM_PROXY_URL")
+    broadcast_batch_size: int = Field(default=25, alias="BROADCAST_BATCH_SIZE")
+    broadcast_batch_delay_seconds: float = Field(default=1.0, alias="BROADCAST_BATCH_DELAY_SECONDS")
 
     marzban_base_url: str = Field(alias="MARZBAN_BASE_URL")
     marzban_username: str = Field(alias="MARZBAN_USERNAME")

@@ -15,7 +15,6 @@ from app.bot.keyboards.user import (
     crypto_payment_keyboard,
     main_menu,
     packages_keyboard,
-    payment_method_keyboard,
     payment_keyboard,
     service_copy_keyboard,
     wallet_keyboard,

@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from app.services.payment_service import format_package_prices, parse_package_prices
+from app.utils.validators import parse_positive_int
+
+
+NUMERIC_SETTING_KEYS = {
+    "price_per_gb_toman",
+    "min_custom_gb",
+    "max_custom_gb",
+    "ltc_toman_rate",
+    "referral_bonus_gb",
+    "price_per_gb_reseller",
+    "min_reseller_bulk_gb",
+}
+
+BOOLEAN_SETTING_KEYS = {"card_reference_required"}
+
+BOOLEAN_TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
+BOOLEAN_FALSE_VALUES = {"0", "false", "no", "off", "disabled"}
+
+
+class AdminSettingValidationError(ValueError):
+    pass
+
+
+def normalize_admin_setting_value(key: str, raw_value: str) -> str:
+    value = raw_value.strip()
+    if key in NUMERIC_SETTING_KEYS:
+        if parse_positive_int(value) is None:
+            raise AdminSettingValidationError("invalid_value")
+        return value
+    if key in BOOLEAN_SETTING_KEYS:
+        normalized = value.lower()
+        if normalized in BOOLEAN_TRUE_VALUES:
+            return "1"
+        if normalized in BOOLEAN_FALSE_VALUES:
+            return "0"
+        raise AdminSettingValidationError("invalid_boolean_value")
+    if key == "package_prices_toman":
+        try:
+            return format_package_prices(parse_package_prices(value))
+        except ValueError as exc:
+            raise AdminSettingValidationError("invalid_package_prices") from exc
+    return value
