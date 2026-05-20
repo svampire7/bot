@@ -45,7 +45,7 @@ from app.services.crypto_service import (
 from app.services.payment_service import PaymentService
 from app.services.wallet_service import WalletService
 from app.utils.formatters import html_code, html_escape, toman
-from app.utils.validators import parse_positive_int
+from app.utils.validators import parse_toman_amount
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ async def wallet_amount_entered(
     _,
 ) -> None:
     assert message.from_user
-    amount = parse_positive_int(message.text or "")
+    amount = parse_toman_amount(message.text or "")
     if not amount:
         await message.answer(_("invalid_topup_amount"))
         return

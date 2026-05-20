@@ -17,3 +17,15 @@ def parse_positive_int(text: str) -> int | None:
         return None
     return value if value > 0 else None
 
+
+def parse_toman_amount(text: str) -> int | None:
+    try:
+        raw = text.strip().replace(",", "")
+        value = int(raw)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    if value < 1000:
+        return value * 1000
+    return value

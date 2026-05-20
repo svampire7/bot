@@ -16,6 +16,7 @@ from app.bot.keyboards.admin import (
     AdminPageCb,
     AdminUserCb,
     AdminWalletCb,
+    AdminWalletUserCb,
     BroadcastSegmentCb,
     DiscountAdminCb,
     PackageAdminCb,
@@ -40,6 +41,8 @@ from app.bot.keyboards.admin import (
     support_thread_keyboard,
     user_actions,
     WalletAdjustCb,
+    wallet_user_detail_keyboard,
+    wallet_users_keyboard,
 )
 from app.bot.keyboards.user import main_menu, service_copy_keyboard
 from app.bot.middlewares.admin_auth import AdminFilter
@@ -53,6 +56,7 @@ from app.db.models import (
     VPNService,
     VPNServiceStatus,
     WalletTransactionStatus,
+    WalletTransactionType,
 )
 from app.db.repositories import (
     active_service_for_user,
@@ -75,7 +79,10 @@ from app.db.repositories import (
     user_order_history,
     user_is_known_for_card_access,
     wallet_transaction_for_update,
+    wallet_user_count,
+    wallet_users_with_balances,
     wallet_balance,
+    wallet_history,
 )
 from app.marzban.client import MarzbanClient
 from app.services.admin_service import log_admin_action
@@ -95,7 +102,7 @@ from app.services.reseller_service import add_reseller, list_resellers, set_rese
 from app.services.wallet_service import WalletService
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
 from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
-from app.utils.validators import parse_positive_int, sanitize_username
+from app.utils.validators import parse_positive_int, parse_toman_amount, sanitize_username
 
 router = Router()
 
@@ -114,6 +121,8 @@ class AdminStates(StatesGroup):
     wallet_adjust_query = State()
     wallet_adjust_amount = State()
     wallet_adjust_note = State()
+    wallet_topup_edit_query = State()
+    wallet_topup_edit_amount = State()
     bulk_name = State()
     bulk_plan = State()
     support_reply = State()
@@ -158,6 +167,8 @@ async def admin_page(callback: CallbackQuery, callback_data: AdminPageCb, sessio
         await show_pending_at(callback, sessionmaker, _, callback_data.offset)
     elif callback_data.area == "wallet":
         await show_pending_wallet_at(callback, sessionmaker, _, callback_data.offset)
+    elif callback_data.area == "wallet_users":
+        await show_wallet_users_at(callback, sessionmaker, _, callback_data.offset)
     else:
         await callback.answer()
 
@@ -215,6 +226,91 @@ async def show_pending_at(callback: CallbackQuery, sessionmaker: async_sessionma
 @router.callback_query(F.data == "admin:wallet_topups")
 async def show_pending_wallet_topups(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
     await show_pending_wallet_at(callback, sessionmaker, _, 0)
+
+
+@router.callback_query(F.data == "admin:wallet_users")
+async def show_wallet_users(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    await show_wallet_users_at(callback, sessionmaker, _, 0)
+
+
+async def show_wallet_users_at(callback: CallbackQuery, sessionmaker: async_sessionmaker, _, offset: int) -> None:
+    async with sessionmaker() as session:
+        total = await wallet_user_count(session)
+        rows = await wallet_users_with_balances(session, limit=10, offset=offset)
+    if not rows:
+        await callback.message.edit_text(_("wallet_users_empty"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    lines = []
+    labels = []
+    for user, balance in rows:
+        username = f"@{user.telegram_username}" if user.telegram_username else "-"
+        name = user.first_name or "-"
+        lines.append(
+            _(
+                "wallet_user_list_line",
+                telegram_id=user.telegram_id,
+                username=username,
+                name=name,
+                balance=toman(balance),
+            )
+        )
+        labels.append((user.id, f"{username} | {toman(balance)}"))
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("wallet_users_title", total=total) + "\n\n" + "\n".join(lines),
+        reply_markup=wallet_users_keyboard(labels, offset, total, _),
+    )
+    await callback.answer()
+
+
+@router.callback_query(AdminWalletUserCb.filter())
+async def wallet_user_detail(
+    callback: CallbackQuery, callback_data: AdminWalletUserCb, sessionmaker: async_sessionmaker, _
+) -> None:
+    async with sessionmaker() as session:
+        user = await session.get(User, callback_data.user_id)
+        if not user:
+            await callback.answer(_("user_not_found"), show_alert=True)
+            return
+        balance = await wallet_balance(session, user.id)
+        txs = await wallet_history(session, user.id, limit=8)
+        orders = await user_order_history(session, user.id, limit=8)
+    tx_history = "\n".join(
+        _(
+            "admin_wallet_tx_line",
+            id=tx.id,
+            type=_("wallet_type_" + tx.transaction_type),
+            amount=toman(tx.amount_toman),
+            status=_("status_" + tx.status),
+            note=(tx.admin_note or "-")[:80],
+            date=tx.created_at.strftime("%Y-%m-%d %H:%M"),
+        )
+        for tx in txs
+    ) or "-"
+    order_history = "\n".join(
+        _(
+            "admin_wallet_order_line",
+            id=order.id,
+            gb=order.gb_amount,
+            price=toman(order.price_toman),
+            status=_("status_" + order.status),
+            date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+        )
+        for order in orders
+    ) or "-"
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _(
+            "wallet_user_detail",
+            telegram_id=user.telegram_id,
+            username=user.telegram_username or "-",
+            name=user.first_name or "-",
+            balance=toman(balance),
+            tx_history=tx_history,
+            order_history=order_history,
+        ),
+        reply_markup=wallet_user_detail_keyboard(user.id, callback_data.offset, _),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:support")
@@ -371,12 +467,43 @@ async def show_pending_wallet_at(callback: CallbackQuery, sessionmaker: async_se
 async def admin_wallet_action(
     callback: CallbackQuery,
     callback_data: AdminWalletCb,
+    state: FSMContext,
     sessionmaker: async_sessionmaker,
     bot,
     i18n,
     _,
 ) -> None:
     assert callback.from_user
+    if callback_data.action == "edit_amount":
+        async with sessionmaker() as session:
+            tx = await wallet_transaction_for_update(session, callback_data.tx_id)
+            if not tx:
+                await callback.answer(_("wallet_tx_not_found"), show_alert=True)
+                return
+            if tx.transaction_type not in {
+                WalletTransactionType.topup_card.value,
+                WalletTransactionType.topup_ltc.value,
+            } or tx.status not in {
+                WalletTransactionStatus.pending_admin.value,
+                WalletTransactionStatus.completed.value,
+            }:
+                await callback.answer(_("wallet_tx_not_editable"), show_alert=True)
+                return
+            current_balance = await wallet_balance(session, tx.user_id)
+            await state.update_data(wallet_topup_edit_tx_id=tx.id)
+            await state.set_state(AdminStates.wallet_topup_edit_amount)
+            await callback.message.answer(  # type: ignore[union-attr]
+                _(
+                    "enter_wallet_topup_edit_amount",
+                    tx_id=tx.id,
+                    current=toman(tx.amount_toman),
+                    balance=toman(current_balance),
+                    status=_("status_" + tx.status),
+                ),
+                reply_markup=admin_back_keyboard(_),
+            )
+            await callback.answer()
+            return
     async with sessionmaker.begin() as session:
         tx = await wallet_transaction_for_update(session, callback_data.tx_id)
         if not tx:
@@ -417,6 +544,65 @@ async def admin_wallet_action(
     except TelegramBadRequest:
         await callback.message.edit_text(admin_message, reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
     await callback.answer()
+
+
+@router.message(AdminStates.wallet_topup_edit_amount)
+async def wallet_topup_edit_amount(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    _,
+) -> None:
+    assert message.from_user
+    new_amount = parse_toman_amount(message.text or "")
+    if not new_amount:
+        await message.answer(_("invalid_topup_amount"), reply_markup=admin_back_keyboard(_))
+        return
+    data = await state.get_data()
+    tx_id = int(data["wallet_topup_edit_tx_id"])
+    async with sessionmaker.begin() as session:
+        tx = await wallet_transaction_for_update(session, tx_id)
+        if not tx:
+            await message.answer(_("wallet_tx_not_found"), reply_markup=admin_dashboard(_))
+            await state.clear()
+            return
+        old_amount = tx.amount_toman
+        if tx.transaction_type not in {
+            WalletTransactionType.topup_card.value,
+            WalletTransactionType.topup_ltc.value,
+        }:
+            await message.answer(_("wallet_tx_not_editable"), reply_markup=admin_dashboard(_))
+            await state.clear()
+            return
+        if tx.status == WalletTransactionStatus.pending_admin.value:
+            tx.amount_toman = new_amount
+            tx.admin_note = f"amount corrected from {old_amount} to {new_amount}"
+            mode = "pending"
+        elif tx.status == WalletTransactionStatus.completed.value:
+            delta = new_amount - old_amount
+            if delta:
+                await WalletService().adjustment(
+                    session,
+                    tx.user_id,
+                    delta,
+                    f"correction for wallet top-up #{tx.id}: {old_amount} -> {new_amount}",
+                )
+            mode = "completed"
+        else:
+            await message.answer(_("wallet_tx_not_editable"), reply_markup=admin_dashboard(_))
+            await state.clear()
+            return
+        await log_admin_action(
+            session,
+            message.from_user.id,
+            "edit_wallet_topup_amount",
+            details=f"{tx.id}:{old_amount}->{new_amount}:{mode}",
+        )
+    await state.clear()
+    await message.answer(
+        _("wallet_topup_amount_updated", tx_id=tx_id, old=toman(old_amount), new=toman(new_amount)),
+        reply_markup=admin_dashboard(_),
+    )
 
 
 @router.callback_query(AdminOrderCb.filter())
@@ -596,6 +782,13 @@ async def ask_wallet_adjust_user(callback: CallbackQuery, state: FSMContext, _) 
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin:wallet_topup_edit")
+async def ask_wallet_topup_edit(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.set_state(AdminStates.wallet_topup_edit_query)
+    await callback.message.edit_text(_("enter_wallet_topup_edit_tx"), reply_markup=admin_back_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin:bulk")
 async def ask_bulk_name(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(AdminStates.bulk_name)
@@ -729,6 +922,41 @@ async def wallet_adjust_note(message: Message, state: FSMContext, sessionmaker: 
         await log_admin_action(session, message.from_user.id, "wallet_adjustment", details=f"{user_id}:{amount}:{note}")
     await state.clear()
     await message.answer(_("wallet_adjust_done"), reply_markup=admin_dashboard(_))
+
+
+@router.message(AdminStates.wallet_topup_edit_query)
+async def wallet_topup_edit_query(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, _) -> None:
+    tx_id = parse_positive_int(message.text or "")
+    if not tx_id:
+        await message.answer(_("invalid_value"), reply_markup=admin_back_keyboard(_))
+        return
+    async with sessionmaker() as session:
+        tx = await wallet_transaction_for_update(session, tx_id)
+        if not tx:
+            await message.answer(_("wallet_tx_not_found"), reply_markup=admin_back_keyboard(_))
+            return
+        if tx.transaction_type not in {
+            WalletTransactionType.topup_card.value,
+            WalletTransactionType.topup_ltc.value,
+        } or tx.status not in {
+            WalletTransactionStatus.pending_admin.value,
+            WalletTransactionStatus.completed.value,
+        }:
+            await message.answer(_("wallet_tx_not_editable"), reply_markup=admin_back_keyboard(_))
+            return
+        current_balance = await wallet_balance(session, tx.user_id)
+        await state.update_data(wallet_topup_edit_tx_id=tx.id)
+        await state.set_state(AdminStates.wallet_topup_edit_amount)
+        await message.answer(
+            _(
+                "enter_wallet_topup_edit_amount",
+                tx_id=tx.id,
+                current=toman(tx.amount_toman),
+                balance=toman(current_balance),
+                status=_("status_" + tx.status),
+            ),
+            reply_markup=admin_back_keyboard(_),
+        )
 
 
 @router.message(AdminStates.support_reply)

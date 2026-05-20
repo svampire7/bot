@@ -40,6 +40,11 @@ class AdminWalletCb(CallbackData, prefix="admwallet"):
     tx_id: int
 
 
+class AdminWalletUserCb(CallbackData, prefix="admwuser"):
+    user_id: int
+    offset: int = 0
+
+
 class AdminPageCb(CallbackData, prefix="admpage"):
     area: str
     offset: int = 0
@@ -68,6 +73,8 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
     for text, data in [
         (_("pending_orders"), "admin:pending"),
         (_("wallet_topups"), "admin:wallet_topups"),
+        (_("edit_wallet_topup"), "admin:wallet_topup_edit"),
+        (_("wallet_users"), "admin:wallet_users"),
         (_("search_user"), "admin:search"),
         (_("support_inbox"), "admin:support"),
         (_("order_history"), "admin:orders"),
@@ -87,7 +94,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("user_area"), "admin:user_area"),
     ]:
         builder.button(text=text, callback_data=data)
-    builder.adjust(2, 2, 2, 2, 2, 2, 2, 2, 1)
+    builder.adjust(2)
     return builder.as_markup()
 
 
@@ -127,18 +134,43 @@ def pending_wallet_keyboard(tx_id: int, _, offset: int = 0, total: int = 0) -> I
     builder = InlineKeyboardBuilder()
     builder.button(text=_("approve"), callback_data=AdminWalletCb(action="approve", tx_id=tx_id))
     builder.button(text=_("reject"), callback_data=AdminWalletCb(action="reject", tx_id=tx_id))
+    builder.button(text=_("edit_wallet_topup_amount"), callback_data=AdminWalletCb(action="edit_amount", tx_id=tx_id))
     if offset > 0:
         builder.button(text=_("prev_page"), callback_data=AdminPageCb(area="wallet", offset=max(0, offset - 1)))
     if offset + 1 < total:
         builder.button(text=_("next_page"), callback_data=AdminPageCb(area="wallet", offset=offset + 1))
     builder.button(text=_("back"), callback_data="admin:dashboard")
-    builder.adjust(2, 1)
+    builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 
 def admin_back_keyboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("back"), callback_data="admin:dashboard")
+    return builder.as_markup()
+
+
+def wallet_users_keyboard(users: list[tuple[int, str]], offset: int, total: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user_id, label in users:
+        builder.button(text=label, callback_data=AdminWalletUserCb(user_id=user_id, offset=offset))
+    if offset > 0:
+        builder.button(
+            text=_("prev_page"),
+            callback_data=AdminPageCb(area="wallet_users", offset=max(0, offset - 10)),
+        )
+    if offset + 10 < total:
+        builder.button(text=_("next_page"), callback_data=AdminPageCb(area="wallet_users", offset=offset + 10))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def wallet_user_detail_keyboard(user_id: int, offset: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("wallet_adjust"), callback_data=WalletAdjustCb(user_id=user_id))
+    builder.button(text=_("back"), callback_data=AdminPageCb(area="wallet_users", offset=offset))
+    builder.adjust(1)
     return builder.as_markup()
 
 

@@ -159,6 +159,33 @@ async def wallet_balance(session: AsyncSession, user_id: int) -> int:
     return int(value or 0)
 
 
+async def wallet_user_count(session: AsyncSession) -> int:
+    return int(
+        await session.scalar(
+            select(func.count(func.distinct(WalletTransaction.user_id))).where(
+                WalletTransaction.status == WalletTransactionStatus.completed.value
+            )
+        )
+        or 0
+    )
+
+
+async def wallet_users_with_balances(
+    session: AsyncSession, limit: int = 10, offset: int = 0
+) -> list[tuple[User, int]]:
+    balance_expr = func.coalesce(func.sum(WalletTransaction.amount_toman), 0).label("balance")
+    result = await session.execute(
+        select(User, balance_expr)
+        .join(WalletTransaction, WalletTransaction.user_id == User.id)
+        .where(WalletTransaction.status == WalletTransactionStatus.completed.value)
+        .group_by(User.id)
+        .order_by(balance_expr.desc(), User.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [(user, int(balance or 0)) for user, balance in result.all()]
+
+
 async def pending_wallet_topups(session: AsyncSession, limit: int = 10, offset: int = 0) -> list[WalletTransaction]:
     result = await session.scalars(
         select(WalletTransaction)
