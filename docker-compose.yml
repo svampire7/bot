@@ -30,6 +30,9 @@ services:
     build: .
     env_file:
       - .env
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     depends_on:
       postgres:
         condition: service_healthy

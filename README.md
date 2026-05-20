@@ -58,7 +58,7 @@ The default price is `220000` Toman per GB. Custom package limits are controlled
 
 `CARD_REFERENCE_REQUIRED=false` keeps card transfer visible to everyone. When enabled from `.env` or Admin Settings, new users must enter a valid reference code from an already-known user before the bot shows card details. LTC wallet top-up stays visible without a reference code.
 
-If your server cannot reach `https://api.telegram.org`, set `TELEGRAM_PROXY_URL` to an HTTP/SOCKS proxy URL supported by aiohttp, or deploy on a server/network with Telegram API access.
+If your server cannot reach `https://api.telegram.org`, set `TELEGRAM_PROXY_URL` to an HTTP/SOCKS proxy URL supported by aiohttp, or deploy on a server/network with Telegram API access. `TELEGRAM_REQUEST_TIMEOUT` controls how long a single Telegram API send/edit call may wait before failing; lower values make the bot recover faster from bad Telegram routes.
 
 ## Run With Docker Compose
 
