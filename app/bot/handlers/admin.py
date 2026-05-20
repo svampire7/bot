@@ -237,13 +237,17 @@ async def show_wallet_users_at(callback: CallbackQuery, sessionmaker: async_sess
     async with sessionmaker() as session:
         total = await wallet_user_count(session)
         rows = await wallet_users_with_balances(session, limit=10, offset=offset)
+        display_rows = []
+        for user, balance in rows:
+            service = await active_service_for_user(session, user.id)
+            display_rows.append((user, balance, service.marzban_username if service else "-"))
     if not rows:
         await callback.message.edit_text(_("wallet_users_empty"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
         await callback.answer()
         return
     lines = []
     labels = []
-    for user, balance in rows:
+    for user, balance, marzban_username in display_rows:
         username = f"@{user.telegram_username}" if user.telegram_username else "-"
         name = user.first_name or "-"
         lines.append(
@@ -252,6 +256,7 @@ async def show_wallet_users_at(callback: CallbackQuery, sessionmaker: async_sess
                 telegram_id=user.telegram_id,
                 username=username,
                 name=name,
+                marzban=marzban_username,
                 balance=toman(balance),
             )
         )
@@ -273,6 +278,7 @@ async def wallet_user_detail(
             await callback.answer(_("user_not_found"), show_alert=True)
             return
         balance = await wallet_balance(session, user.id)
+        service = await active_service_for_user(session, user.id)
         txs = await wallet_history(session, user.id, limit=8)
         orders = await user_order_history(session, user.id, limit=8)
     tx_history = "\n".join(
@@ -304,6 +310,7 @@ async def wallet_user_detail(
             telegram_id=user.telegram_id,
             username=user.telegram_username or "-",
             name=user.first_name or "-",
+            marzban=service.marzban_username if service else "-",
             balance=toman(balance),
             tx_history=tx_history,
             order_history=order_history,
