@@ -1251,6 +1251,7 @@ async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmak
                  packages=format_package_prices(await payment.package_prices(session)),
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
+                 trial_status=_("enabled") if await payment.trial_enabled(session) else _("disabled"),
                  card=html_code(await payment.card_number(session)),
                  card_gate=_("enabled") if await payment.card_reference_required(session) else _("disabled"),
                  card_holder=html_code(await payment.card_holder_name(session)),

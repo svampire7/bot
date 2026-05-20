@@ -11,6 +11,8 @@ def test_package_prices_roundtrip_sorted() -> None:
 def test_admin_boolean_setting_normalization() -> None:
     assert normalize_admin_setting_value("card_reference_required", "on") == "1"
     assert normalize_admin_setting_value("card_reference_required", "0") == "0"
+    assert normalize_admin_setting_value("trial_enabled", "off") == "0"
+    assert normalize_admin_setting_value("trial_enabled", "enabled") == "1"
 
 
 def test_admin_ltc_bonus_allows_zero() -> None:
@@ -20,7 +22,7 @@ def test_admin_ltc_bonus_allows_zero() -> None:
 
 def test_admin_boolean_setting_rejects_invalid_value() -> None:
     try:
-        normalize_admin_setting_value("card_reference_required", "maybe")
+        normalize_admin_setting_value("trial_enabled", "maybe")
     except AdminSettingValidationError as exc:
         assert str(exc) == "invalid_boolean_value"
     else:

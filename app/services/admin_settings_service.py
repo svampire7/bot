@@ -16,7 +16,7 @@ NUMERIC_SETTING_KEYS = {
 
 NON_NEGATIVE_NUMERIC_SETTING_KEYS = {"crypto_ltc_bonus_percent"}
 
-BOOLEAN_SETTING_KEYS = {"card_reference_required"}
+BOOLEAN_SETTING_KEYS = {"card_reference_required", "trial_enabled"}
 
 BOOLEAN_TRUE_VALUES = {"1", "true", "yes", "on", "enabled"}
 BOOLEAN_FALSE_VALUES = {"0", "false", "no", "off", "disabled"}

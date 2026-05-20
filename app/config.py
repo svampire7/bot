@@ -38,6 +38,7 @@ class Settings(BaseSettings):
         default="@safevpnsafe",
         alias="TRIAL_REQUIRED_CHANNEL_USERNAME",
     )
+    trial_enabled: bool = Field(default=True, alias="TRIAL_ENABLED")
     trial_traffic_mb: int = Field(default=500, alias="TRIAL_TRAFFIC_MB")
     trial_duration_hours: int = Field(default=2, alias="TRIAL_DURATION_HOURS")
     trial_expire_action: str = Field(default="disable", alias="TRIAL_EXPIRE_ACTION")

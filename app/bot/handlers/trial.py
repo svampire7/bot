@@ -7,9 +7,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.keyboards.user import trial_join_keyboard, trial_ready_keyboard
+from app.bot.keyboards.user import back_to_menu_keyboard, trial_join_keyboard, trial_ready_keyboard
 from app.config import Settings
 from app.db.repositories import get_or_create_user
+from app.services.payment_service import PaymentService
 from app.services.trial_service import (
     ActiveServiceExistsError,
     TrialAlreadyUsedError,
@@ -47,6 +48,11 @@ async def trial_menu(
 ) -> None:
     assert callback.from_user
     await state.clear()
+    async with sessionmaker() as session:
+        if not await PaymentService(settings).trial_enabled(session):
+            await callback.message.edit_text(_("trial_disabled"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
+            await callback.answer()
+            return
     try:
         is_member = await _is_required_channel_member(bot, callback.from_user.id, settings)
     except (TelegramBadRequest, TelegramForbiddenError):
@@ -75,6 +81,10 @@ async def activate_trial(
     _,
 ) -> None:
     assert callback.from_user
+    async with sessionmaker() as session:
+        if not await PaymentService(settings).trial_enabled(session):
+            await callback.answer(_("trial_disabled"), show_alert=True)
+            return
     try:
         is_member = await _is_required_channel_member(bot, callback.from_user.id, settings)
     except (TelegramBadRequest, TelegramForbiddenError):

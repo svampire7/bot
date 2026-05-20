@@ -239,6 +239,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_packages"), callback_data="admin:set:package_prices_toman")
     builder.button(text=_("package_editor"), callback_data="admin:packages")
     builder.button(text=_("discount_codes"), callback_data="admin:discounts")
+    builder.button(text=_("change_trial_enabled"), callback_data="admin:set:trial_enabled")
     builder.button(text=_("change_card"), callback_data="admin:set:card_number")
     builder.button(text=_("change_card_reference_gate"), callback_data="admin:set:card_reference_required")
     builder.button(text=_("change_card_holder"), callback_data="admin:set:card_holder_name")
@@ -252,7 +253,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_reseller_min_gb"), callback_data="admin:set:min_reseller_bulk_gb")
     builder.button(text=_("change_support"), callback_data="admin:set:support_username")
     builder.button(text=_("back"), callback_data="admin:dashboard")
-    builder.adjust(2, 2, 2, 2, 2, 2, 2, 1)
+    builder.adjust(2)
     return builder.as_markup()
 
 

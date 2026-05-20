@@ -51,6 +51,10 @@ class PaymentService:
         )
         return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
+    async def trial_enabled(self, session: AsyncSession) -> bool:
+        value = await get_setting(session, "trial_enabled", "1" if self.settings.trial_enabled else "0")
+        return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
     async def card_holder_name(self, session: AsyncSession) -> str:
         return await get_setting(session, "card_holder_name", self.settings.card_holder_name)
 
