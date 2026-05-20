@@ -1,5 +1,6 @@
 aiogram>=3.6,<4
 aiohttp>=3.9,<4
+aiohttp-socks>=0.9,<1
 alembic>=1.13,<2
 asyncpg>=0.29,<1
 pydantic>=2.7,<3
