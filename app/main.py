@@ -38,7 +38,7 @@ async def main() -> None:
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     storage = RedisStorage(redis=redis)
     bot_session = AiohttpSession(
-        proxy=settings.telegram_proxy_url,
+        proxy=settings.telegram_proxy_url or None,
         timeout=settings.telegram_request_timeout,
     )
     bot = Bot(
