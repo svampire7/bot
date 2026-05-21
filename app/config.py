@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     telegram_request_timeout: float = Field(default=12.0, alias="TELEGRAM_REQUEST_TIMEOUT")
     broadcast_batch_size: int = Field(default=25, alias="BROADCAST_BATCH_SIZE")
     broadcast_batch_delay_seconds: float = Field(default=1.0, alias="BROADCAST_BATCH_DELAY_SECONDS")
+    traffic_alert_check_interval_seconds: int = Field(
+        default=900,
+        alias="TRAFFIC_ALERT_CHECK_INTERVAL_SECONDS",
+    )
 
     marzban_base_url: str = Field(alias="MARZBAN_BASE_URL")
     marzban_username: str = Field(alias="MARZBAN_USERNAME")

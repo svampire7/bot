@@ -139,6 +139,7 @@ class VPNService(Base):
     remaining_traffic_gb: Mapped[float | None]
     status: Mapped[str] = mapped_column(String(32), default=VPNServiceStatus.active.value, index=True)
     low_traffic_alert_sent: Mapped[bool] = mapped_column(Boolean, default=False)
+    traffic_depleted_alert_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     trial_expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

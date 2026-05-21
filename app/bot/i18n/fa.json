@@ -90,6 +90,8 @@
   "refresh_usage": "‏بروزرسانی مصرف",
   "buy_more_traffic": "‏خرید حجم بیشتر",
   "low_traffic_warning": "هشدار کمبود حجم: فقط {remaining} باقی مانده است.",
+  "traffic_80_notification": "اطلاع حجم: ۸۰ درصد حجم VPN شما مصرف شده است. حجم باقی‌مانده: {remaining}.",
+  "traffic_depleted_notification": "حجم VPN شما به صفر رسیده است. برای ادامه استفاده از ربات حجم اضافه کنید.",
   "trial_join_required": "برای فعال‌سازی تست رایگان، ابتدا باید عضو کانال تلگرام ما شوید:\n{channel}\n\nتست رایگان شامل ۵۰۰ مگابایت حجم است و بعد از ۲ ساعت منقضی می‌شود.",
   "join_required_channel": "‏عضویت در کانال",
   "check_membership_activate": "‏بررسی و فعال‌سازی تست",

@@ -1721,6 +1721,7 @@ async def add_traffic_gb(
         if service:
             service.data_limit_gb += gb
             service.low_traffic_alert_sent = False
+            service.traffic_depleted_alert_sent = False
             service.status = VPNServiceStatus.active.value
         await log_admin_action(session, message.from_user.id, "manual_add_traffic", details=f"{username}:{gb}")  # type: ignore[union-attr]
     await state.clear()

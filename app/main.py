@@ -17,6 +17,7 @@ from app.bot.middlewares.throttling import ThrottlingMiddleware
 from app.config import get_settings
 from app.db.session import SessionLocal, engine
 from app.services.trial_service import TrialService
+from app.services.traffic_alert_service import TrafficAlertService
 from app.utils.logging import setup_logging
 
 
@@ -30,6 +31,18 @@ async def trial_cleanup_loop(settings) -> None:
         except Exception:
             logging.getLogger(__name__).exception("Trial cleanup failed")
         await asyncio.sleep(300)
+
+
+async def traffic_alert_loop(settings, bot: Bot, i18n: I18n) -> None:
+    service = TrafficAlertService(settings, bot, i18n)
+    while True:
+        try:
+            sent = await service.check_paid_services(SessionLocal)
+            if sent:
+                logging.getLogger(__name__).info("Sent traffic alerts", extra={"count": sent})
+        except Exception:
+            logging.getLogger(__name__).exception("Traffic alert check failed")
+        await asyncio.sleep(settings.traffic_alert_check_interval_seconds)
 
 
 async def main() -> None:
@@ -66,6 +79,7 @@ async def main() -> None:
 
     logging.getLogger(__name__).info("Starting bot")
     cleanup_task = asyncio.create_task(trial_cleanup_loop(settings))
+    traffic_alert_task = asyncio.create_task(traffic_alert_loop(settings, bot, i18n))
     try:
         await dp.start_polling(
             bot,
@@ -76,6 +90,7 @@ async def main() -> None:
         )
     finally:
         cleanup_task.cancel()
+        traffic_alert_task.cancel()
         await bot.session.close()
         await redis.aclose()
         await engine.dispose()

@@ -90,6 +90,8 @@
   "refresh_usage": "Refresh Usage",
   "buy_more_traffic": "Buy More Traffic",
   "low_traffic_warning": "Low traffic warning: only {remaining} remains.",
+  "traffic_80_notification": "Traffic notice: you have used 80% of your VPN volume. Remaining traffic: {remaining}.",
+  "traffic_depleted_notification": "Your VPN traffic has reached zero. Add traffic from the bot to continue using your service.",
   "trial_join_required": "To activate your free trial, please join our required Telegram channel first:\n{channel}\n\nTrial includes 500MB traffic and expires after 2 hours.",
   "join_required_channel": "Join Channel",
   "check_membership_activate": "Check and Activate Trial",

@@ -70,6 +70,7 @@ class VPNProvisioningService:
                         config_links = updated.links
                         service.data_limit_gb += order.gb_amount
                         service.low_traffic_alert_sent = False
+                        service.traffic_depleted_alert_sent = False
                         service.is_trial = False
                         service.trial_expire_at = None
                     else:
@@ -130,6 +131,7 @@ class VPNProvisioningService:
             service.subscription_url = marzban.get_subscription_url(service.marzban_username, updated)
             service.data_limit_gb += pending_bonus
             service.low_traffic_alert_sent = False
+            service.traffic_depleted_alert_sent = False
             user.pending_referral_bonus_gb = 0
 
         completed_before = await session.scalar(
@@ -146,6 +148,7 @@ class VPNProvisioningService:
         service.subscription_url = marzban.get_subscription_url(service.marzban_username, updated)
         service.data_limit_gb += bonus_gb
         service.low_traffic_alert_sent = False
+        service.traffic_depleted_alert_sent = False
         user.referral_bonus_awarded = True
 
         referrer = await session.scalar(
@@ -163,6 +166,7 @@ class VPNProvisioningService:
             )
             referrer_service.data_limit_gb += bonus_gb
             referrer_service.low_traffic_alert_sent = False
+            referrer_service.traffic_depleted_alert_sent = False
             referrer_pending = False
         else:
             referrer.pending_referral_bonus_gb = int(referrer.pending_referral_bonus_gb or 0) + bonus_gb
