@@ -32,6 +32,14 @@ class ReferralRewardResult:
     referrer_pending: bool = False
 
 
+def first_referral_bonus_allowed(user: User, completed_before: int) -> bool:
+    return bool(
+        user.referred_by_user_id
+        and not user.referral_bonus_awarded
+        and completed_before == 0
+    )
+
+
 class VPNProvisioningService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -110,7 +118,12 @@ class VPNProvisioningService:
         if bonus_gb <= 0:
             return ReferralRewardResult()
 
-        user = order.user
+        # Serialize referral bonus decisions for this buyer. Otherwise two pending
+        # purchases approved together can both decide they are the first purchase.
+        user = await session.scalar(select(User).where(User.id == order.user_id).with_for_update())
+        if not user:
+            raise ValueError("Order user not found")
+
         pending_bonus = int(user.pending_referral_bonus_gb or 0)
         if pending_bonus > 0:
             updated = await marzban.add_traffic_to_user(service.marzban_username, pending_bonus)
@@ -126,7 +139,7 @@ class VPNProvisioningService:
                 Order.id != order.id,
             )
         )
-        if user.referral_bonus_awarded or not user.referred_by_user_id or int(completed_before or 0) > 0:
+        if not first_referral_bonus_allowed(user, int(completed_before or 0)):
             return ReferralRewardResult(pending_bonus_gb=pending_bonus)
 
         updated = await marzban.add_traffic_to_user(service.marzban_username, bonus_gb)
@@ -135,7 +148,9 @@ class VPNProvisioningService:
         service.low_traffic_alert_sent = False
         user.referral_bonus_awarded = True
 
-        referrer = await session.get(User, user.referred_by_user_id)
+        referrer = await session.scalar(
+            select(User).where(User.id == user.referred_by_user_id).with_for_update()
+        )
         if not referrer:
             return ReferralRewardResult(referred_bonus_gb=bonus_gb, pending_bonus_gb=pending_bonus)
 
