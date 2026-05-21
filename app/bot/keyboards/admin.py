@@ -45,6 +45,11 @@ class AdminWalletUserCb(CallbackData, prefix="admwuser"):
     offset: int = 0
 
 
+class AdminAllUserCb(CallbackData, prefix="admallusr"):
+    user_id: int
+    offset: int = 0
+
+
 class AdminPageCb(CallbackData, prefix="admpage"):
     area: str
     offset: int = 0
@@ -75,6 +80,7 @@ def admin_dashboard(_) -> InlineKeyboardMarkup:
         (_("wallet_topups"), "admin:wallet_topups"),
         (_("edit_wallet_topup"), "admin:wallet_topup_edit"),
         (_("wallet_users"), "admin:wallet_users"),
+        (_("all_users"), "admin:all_users"),
         (_("search_user"), "admin:search"),
         (_("support_inbox"), "admin:support"),
         (_("order_history"), "admin:orders"),
@@ -171,6 +177,35 @@ def wallet_user_detail_keyboard(user_id: int, offset: int, _) -> InlineKeyboardM
     builder.button(text=_("wallet_adjust"), callback_data=WalletAdjustCb(user_id=user_id))
     builder.button(text=_("back"), callback_data=AdminPageCb(area="wallet_users", offset=offset))
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def all_users_keyboard(users: list[tuple[int, str]], offset: int, total: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user_id, label in users:
+        builder.button(text=label, callback_data=AdminAllUserCb(user_id=user_id, offset=offset))
+    if offset > 0:
+        builder.button(text=_("prev_page"), callback_data=AdminPageCb(area="all_users", offset=max(0, offset - 10)))
+    if offset + 10 < total:
+        builder.button(text=_("next_page"), callback_data=AdminPageCb(area="all_users", offset=offset + 10))
+    builder.button(text=_("back"), callback_data="admin:dashboard")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def all_user_detail_keyboard(user_id: int, offset: int, _) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for action, label in [
+        ("addtraffic", _("add_traffic")),
+        ("disable", _("disable_user")),
+        ("enable", _("enable_user")),
+        ("delete", _("delete_user")),
+        ("newservice", _("create_new_service")),
+    ]:
+        builder.button(text=label, callback_data=AdminUserCb(action=action, user_id=user_id))
+    builder.button(text=_("wallet_adjust"), callback_data=WalletAdjustCb(user_id=user_id))
+    builder.button(text=_("back"), callback_data=AdminPageCb(area="all_users", offset=offset))
+    builder.adjust(2, 2, 1, 1)
     return builder.as_markup()
 
 

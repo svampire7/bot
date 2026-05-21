@@ -72,6 +72,38 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
     return await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
+async def user_count(session: AsyncSession) -> int:
+    return int(await session.scalar(select(func.count(User.id))) or 0)
+
+
+async def users_with_referral_overview(
+    session: AsyncSession, limit: int = 10, offset: int = 0
+) -> list[tuple[User, int | None, int]]:
+    invited_counts = (
+        select(
+            User.referred_by_user_id.label("referrer_id"),
+            func.count(User.id).label("invited_count"),
+        )
+        .where(User.referred_by_user_id.is_not(None))
+        .group_by(User.referred_by_user_id)
+        .subquery()
+    )
+    referrer = User.__table__.alias("referrer")
+    rows = await session.execute(
+        select(
+            User,
+            referrer.c.telegram_id.label("referrer_telegram_id"),
+            func.coalesce(invited_counts.c.invited_count, 0).label("invited_count"),
+        )
+        .outerjoin(referrer, referrer.c.id == User.referred_by_user_id)
+        .outerjoin(invited_counts, invited_counts.c.referrer_id == User.id)
+        .order_by(User.created_at.desc(), User.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [(user, referrer_id, int(invited or 0)) for user, referrer_id, invited in rows.all()]
+
+
 async def set_referrer_if_allowed(session: AsyncSession, user: User, referrer_telegram_id: int) -> bool:
     if user.referred_by_user_id or user.telegram_id == referrer_telegram_id:
         return False

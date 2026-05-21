@@ -15,6 +15,7 @@ from app.bot.keyboards.admin import (
     AdminOrderCb,
     AdminPageCb,
     AdminUserCb,
+    AdminAllUserCb,
     AdminWalletCb,
     AdminWalletUserCb,
     BroadcastSegmentCb,
@@ -25,6 +26,8 @@ from app.bot.keyboards.admin import (
     SupportTicketCb,
     admin_back_keyboard,
     admin_dashboard,
+    all_user_detail_keyboard,
+    all_users_keyboard,
     broadcast_segments_keyboard,
     confirm_broadcast,
     confirm_delete_keyboard,
@@ -70,6 +73,7 @@ from app.db.repositories import (
     pending_orders,
     pending_wallet_topup_count,
     pending_wallet_topups,
+    referral_stats,
     search_user,
     set_setting,
     support_ticket_by_id,
@@ -78,6 +82,8 @@ from app.db.repositories import (
     support_tickets,
     user_order_history,
     user_is_known_for_card_access,
+    user_count,
+    users_with_referral_overview,
     wallet_transaction_for_update,
     wallet_user_count,
     wallet_users_with_balances,
@@ -169,6 +175,8 @@ async def admin_page(callback: CallbackQuery, callback_data: AdminPageCb, sessio
         await show_pending_wallet_at(callback, sessionmaker, _, callback_data.offset)
     elif callback_data.area == "wallet_users":
         await show_wallet_users_at(callback, sessionmaker, _, callback_data.offset)
+    elif callback_data.area == "all_users":
+        await show_all_users_at(callback, sessionmaker, _, callback_data.offset)
     else:
         await callback.answer()
 
@@ -231,6 +239,94 @@ async def show_pending_wallet_topups(callback: CallbackQuery, sessionmaker: asyn
 @router.callback_query(F.data == "admin:wallet_users")
 async def show_wallet_users(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
     await show_wallet_users_at(callback, sessionmaker, _, 0)
+
+
+@router.callback_query(F.data == "admin:all_users")
+async def show_all_users(callback: CallbackQuery, sessionmaker: async_sessionmaker, _) -> None:
+    await show_all_users_at(callback, sessionmaker, _, 0)
+
+
+async def show_all_users_at(callback: CallbackQuery, sessionmaker: async_sessionmaker, _, offset: int) -> None:
+    async with sessionmaker() as session:
+        total = await user_count(session)
+        rows = await users_with_referral_overview(session, limit=10, offset=offset)
+    if not rows:
+        await callback.message.edit_text(_("all_users_empty"), reply_markup=admin_dashboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    lines = []
+    labels = []
+    for user, referrer_telegram_id, invited_count in rows:
+        username = f"@{user.telegram_username}" if user.telegram_username else "-"
+        name = user.first_name or "-"
+        lines.append(
+            _(
+                "all_user_list_line",
+                telegram_id=user.telegram_id,
+                username=username,
+                name=name,
+                referrer=referrer_telegram_id or "-",
+                invited=invited_count,
+                date=user.created_at.strftime("%Y-%m-%d %H:%M"),
+            )
+        )
+        labels.append((user.id, f"{username} | {user.telegram_id}"))
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("all_users_title", total=total) + "\n\n" + "\n\n".join(lines),
+        reply_markup=all_users_keyboard(labels, offset, total, _),
+    )
+    await callback.answer()
+
+
+@router.callback_query(AdminAllUserCb.filter())
+async def all_user_detail(
+    callback: CallbackQuery, callback_data: AdminAllUserCb, sessionmaker: async_sessionmaker, _
+) -> None:
+    async with sessionmaker() as session:
+        user = await session.get(User, callback_data.user_id)
+        if not user:
+            await callback.answer(_("user_not_found"), show_alert=True)
+            return
+        referrer = await session.get(User, user.referred_by_user_id) if user.referred_by_user_id else None
+        referrals = await referral_stats(session, user.id)
+        service = await active_service_for_user(session, user.id)
+        balance = await wallet_balance(session, user.id)
+        orders = await user_order_history(session, user.id, limit=8)
+    order_history = "\n".join(
+        _(
+            "admin_wallet_order_line",
+            id=order.id,
+            gb=order.gb_amount,
+            price=toman(order.price_toman),
+            status=_("status_" + order.status),
+            date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+        )
+        for order in orders
+    ) or "-"
+    referrer_text = "-"
+    if referrer:
+        referrer_name = f"@{referrer.telegram_username}" if referrer.telegram_username else "-"
+        referrer_text = f"{referrer.telegram_id} | {referrer_name}"
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _(
+            "all_user_detail",
+            telegram_id=user.telegram_id,
+            username=user.telegram_username or "-",
+            name=user.first_name or "-",
+            language=user.language,
+            marzban=service.marzban_username if service else "-",
+            balance=toman(balance),
+            referred_by=referrer_text,
+            invited=referrals["invited"],
+            paid=referrals["paid"],
+            pending_bonus=referrals["pending_bonus_gb"],
+            bonus_awarded=_("enabled") if user.referral_bonus_awarded else _("disabled"),
+            created_at=user.created_at.strftime("%Y-%m-%d %H:%M"),
+            order_history=order_history,
+        ),
+        reply_markup=all_user_detail_keyboard(user.id, callback_data.offset, _),
+    )
+    await callback.answer()
 
 
 async def show_wallet_users_at(callback: CallbackQuery, sessionmaker: async_sessionmaker, _, offset: int) -> None:
