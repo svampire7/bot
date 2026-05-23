@@ -2,5 +2,9 @@
 set -e
 
 alembic upgrade head
-exec python -m app.main
 
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
+exec python -m app.main
