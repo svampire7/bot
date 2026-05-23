@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     web_admin_host: str = Field(default="0.0.0.0", alias="WEB_ADMIN_HOST")
     web_admin_port: int = Field(default=8080, alias="WEB_ADMIN_PORT")
     web_admin_action_telegram_id: int | None = Field(default=None, alias="WEB_ADMIN_ACTION_TELEGRAM_ID")
+    web_admin_allowed_ips_raw: str = Field(default="", alias="WEB_ADMIN_ALLOWED_IPS")
 
     marzban_base_url: str = Field(alias="MARZBAN_BASE_URL")
     marzban_username: str = Field(alias="MARZBAN_USERNAME")
@@ -98,6 +99,16 @@ class Settings(BaseSettings):
     @property
     def web_admin_session_secret(self) -> str:
         return self.web_admin_secret_key or self.bot_token
+
+    @property
+    def web_admin_allowed_ips(self) -> set[str]:
+        if not self.web_admin_allowed_ips_raw.strip():
+            return set()
+        return {
+            item.strip()
+            for item in self.web_admin_allowed_ips_raw.split(",")
+            if item.strip()
+        }
 
     @field_validator("default_language")
     @classmethod

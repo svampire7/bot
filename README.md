@@ -323,10 +323,14 @@ WEB_ADMIN_SECRET_KEY=change-this-long-random-secret
 WEB_ADMIN_HOST=0.0.0.0
 WEB_ADMIN_PORT=8080
 WEB_ADMIN_ACTION_TELEGRAM_ID=
+WEB_ADMIN_ALLOWED_IPS=
 ```
 
 `WEB_ADMIN_ACTION_TELEGRAM_ID` is used in logs for web actions. If empty, the first
 ID in `ADMIN_TELEGRAM_IDS` is used.
+
+`WEB_ADMIN_ALLOWED_IPS` is optional. When set, only these comma-separated source IPs
+can access the web admin panel, for example `WEB_ADMIN_ALLOWED_IPS=81.91.146.90`.
 
 Run it with Docker Compose:
 

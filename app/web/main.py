@@ -12,7 +12,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BufferedInputFile
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -105,6 +105,24 @@ app.mount("/static", StaticFiles(directory="app/web/static"), name="static")
 
 templates.env.filters["toman"] = toman
 templates.env.filters["gb"] = optional_gb
+
+
+def request_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    real_ip = request.headers.get("x-real-ip", "")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else ""
+
+
+@app.middleware("http")
+async def restrict_web_admin_ip(request: Request, call_next):
+    allowed_ips = settings.web_admin_allowed_ips
+    if allowed_ips and request_ip(request) not in allowed_ips:
+        return PlainTextResponse("Access denied", status_code=403)
+    return await call_next(request)
 
 
 def redirect(path: str) -> RedirectResponse:
