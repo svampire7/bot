@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} | VPN Bot Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}">
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">Safe-VPN Admin</div>
+        <nav class="nav">
+          <a href="/">Dashboard</a>
+          <a href="/orders">Pending Orders</a>
+          <a href="/wallet/topups">Wallet Top-ups</a>
+          <a href="/users">Users</a>
+          <a href="/services">Active Services</a>
+          <a href="/support">Support</a>
+          <a href="/resellers">Resellers</a>
+          <a href="/reseller-orders">Bulk Orders</a>
+          <a href="/settings">Settings</a>
+          <a href="/broadcast">Broadcast</a>
+        </nav>
+        <form class="logout" method="post" action="/logout">
+          <button type="submit">Logout</button>
+        </form>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <h1>{{ title }}</h1>
+          <span class="badge">Web Admin</span>
+        </div>
+        {% if msg %}
+          <div class="alert {{ level }}">{{ msg }}</div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </body>
+</html>

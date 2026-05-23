@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <table>
+    <thead><tr><th>Username</th><th>User ID</th><th>Limit</th><th>Used</th><th>Remaining</th><th>Status</th><th>Subscription</th></tr></thead>
+    <tbody>
+      {% for service in rows %}
+      <tr>
+        <td><code>{{ service.marzban_username }}</code></td>
+        <td><a href="/users/{{ service.user_id }}">{{ service.user_id }}</a></td>
+        <td>{{ service.data_limit_gb|gb }}</td>
+        <td>{{ service.used_traffic_gb|gb }}</td>
+        <td>{{ service.remaining_traffic_gb|gb }}</td>
+        <td>{{ service.status }}</td>
+        <td class="mono">{{ service.subscription_url or "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No active services.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

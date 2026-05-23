@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <form method="post" action="/broadcast" class="grid">
+    <label>Segment
+      <select name="segment">
+        <option value="all">All users</option>
+        <option value="active">Active services</option>
+        <option value="no_service">No service</option>
+        <option value="fa">Persian users</option>
+        <option value="en">English users</option>
+        <option value="wallet_positive">Wallet balance positive</option>
+      </select>
+    </label>
+    <label>Message<textarea name="text" required></textarea></label>
+    <button type="submit">Send Broadcast</button>
+  </form>
+</section>
+{% endblock %}

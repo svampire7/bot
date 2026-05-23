@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <table>
+    <thead><tr><th>Code</th><th>Reseller</th><th>Request</th><th>Total</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for order in rows %}
+      <tr>
+        <td>{{ order.order_code }}</td>
+        <td>{{ order.reseller_telegram_id }}</td>
+        <td><pre>{{ order.raw_request_text }}</pre></td>
+        <td>{{ order.total_accounts }} accounts<br>{{ order.total_gb }}GB</td>
+        <td>{{ order.total_price|toman }} Toman</td>
+        <td><span class="badge {{ 'ok' if order.status == 'completed' else 'warn' }}">{{ order.status }}</span></td>
+        <td class="actions">
+          <form method="post" action="/reseller-orders/{{ order.id }}/approve"><button type="submit">Approve</button></form>
+          <form method="post" action="/reseller-orders/{{ order.id }}/retry"><button class="warning" type="submit">Retry</button></form>
+          <form method="post" action="/reseller-orders/{{ order.id }}/resend"><button class="secondary" type="submit">Resend TXT</button></form>
+          <form method="post" action="/reseller-orders/{{ order.id }}/reject"><button class="danger" type="submit">Reject</button></form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No reseller bulk orders.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

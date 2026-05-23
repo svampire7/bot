@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login | VPN Bot Admin</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}">
+  </head>
+  <body class="login-page">
+    <section class="card login-card">
+      <h1>Safe-VPN Admin</h1>
+      <p class="muted">Sign in to manage bot operations.</p>
+      {% if msg %}<div class="alert {{ level }}">{{ msg }}</div>{% endif %}
+      <form method="post" action="/login" class="grid">
+        <label>Username<input name="username" autocomplete="username" required></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">Login</button>
+      </form>
+    </section>
+  </body>
+</html>

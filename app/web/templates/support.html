@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="split">
+  <div class="card">
+    <h2>Tickets</h2>
+    {% for ticket in tickets %}
+      <p>
+        <a class="button secondary" href="/support?ticket_id={{ ticket.id }}">#{{ ticket.id }} @{{ ticket.user.telegram_username or "-" }}</a>
+        <br><span class="muted">{{ ticket.user.telegram_id }} | {{ ticket.status }} | {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        <br>{{ ticket.last_message_preview or "-" }}
+      </p>
+    {% else %}
+      <p class="muted">No support tickets.</p>
+    {% endfor %}
+  </div>
+  <div class="card">
+    {% if selected %}
+      <h2>Ticket #{{ selected.id }}</h2>
+      <p>@{{ selected.user.telegram_username or "-" }} | {{ selected.user.telegram_id }} | {{ selected.status }}</p>
+      <div class="thread">
+        {% for item in messages %}
+          <div class="bubble {{ 'admin' if item.sender_type == 'admin' else '' }}">
+            <strong>{{ item.sender_type }}</strong>
+            <div>{{ item.text or item.message_type or "-" }}</div>
+            <small class="muted">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</small>
+          </div>
+        {% endfor %}
+      </div>
+      <form method="post" action="/support/{{ selected.id }}/reply" class="grid" style="margin-top:14px">
+        <textarea name="text" placeholder="Reply to user"></textarea>
+        <button type="submit">Send Reply</button>
+      </form>
+    {% else %}
+      <p class="muted">Select a ticket from the left.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

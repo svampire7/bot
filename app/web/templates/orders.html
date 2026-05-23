@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <div class="toolbar">
+    <strong>{{ total }} pending orders</strong>
+    <a class="button secondary" href="/orders">Refresh</a>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>User</th><th>Traffic</th><th>Price</th><th>Payment</th><th>Receipt</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for order in rows %}
+      <tr>
+        <td>#{{ order.id }}<br><span class="badge warn">{{ order.status }}</span></td>
+        <td>@{{ order.user.telegram_username or "-" }}<br><span class="muted">{{ order.user.telegram_id }}</span></td>
+        <td>{{ order.gb_amount }}GB</td>
+        <td>{{ order.price_toman|toman }} Toman<br><span class="muted">Discount {{ order.discount_amount_toman|toman }}</span></td>
+        <td>{{ order.payment_method }}<br><span class="mono">{{ order.crypto_tx_hash or "" }}</span></td>
+        <td class="mono">{{ order.receipt_file_id or "-" }}</td>
+        <td>
+          <div class="actions">
+            <form method="post" action="/orders/{{ order.id }}/approve"><button type="submit">Approve</button></form>
+            <form method="post" action="/orders/{{ order.id }}/reject" class="inline">
+              <input name="reason" value="Rejected by admin">
+              <button class="danger" type="submit">Reject</button>
+            </form>
+            <a class="button secondary" href="/users/{{ order.user_id }}">View User</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="muted">No pending orders.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="pagination">
+    {% if prev_url %}<a class="button secondary" href="{{ prev_url }}">Previous</a>{% endif %}
+    {% if next_url %}<a class="button secondary" href="{{ next_url }}">Next</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

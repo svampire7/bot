@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <div class="toolbar">
+    <strong>{{ total }} pending wallet top-ups</strong>
+    <a class="button secondary" href="/wallet/topups">Refresh</a>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>User</th><th>Amount</th><th>Method</th><th>Receipt</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for tx in rows %}
+      <tr>
+        <td>#{{ tx.id }}<br><span class="badge warn">{{ tx.status }}</span></td>
+        <td>@{{ tx.user.telegram_username or "-" }}<br>{{ tx.user.telegram_id }}</td>
+        <td>{{ tx.amount_toman|toman }} Toman</td>
+        <td>{{ tx.payment_method }}</td>
+        <td class="mono">{{ tx.receipt_file_id or tx.crypto_tx_hash or "-" }}</td>
+        <td>
+          <div class="actions">
+            <form method="post" action="/wallet/topups/{{ tx.id }}/approve"><button type="submit">Approve</button></form>
+            <form method="post" action="/wallet/topups/{{ tx.id }}/reject"><button class="danger" type="submit">Reject</button></form>
+            <form method="post" action="/wallet/topups/{{ tx.id }}/edit" class="inline">
+              <input name="amount" value="{{ tx.amount_toman }}" inputmode="numeric">
+              <button class="warning" type="submit">Correct</button>
+            </form>
+            <a class="button secondary" href="/users/{{ tx.user_id }}">View User</a>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No pending top-ups.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="pagination">
+    {% if prev_url %}<a class="button secondary" href="{{ prev_url }}">Previous</a>{% endif %}
+    {% if next_url %}<a class="button secondary" href="{{ next_url }}">Next</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

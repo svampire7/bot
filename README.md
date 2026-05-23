@@ -307,6 +307,51 @@ Subscription: https://...
 --------------------------------
 ```
 
+## Web Admin Panel
+
+The project includes an optional browser admin panel beside the Telegram admin panel.
+It uses the same PostgreSQL database, service layer, Marzban API client, and
+`admin_action_logs`.
+
+Configure these values in `.env`:
+
+```env
+WEB_ADMIN_ENABLED=true
+WEB_ADMIN_USERNAME=admin
+WEB_ADMIN_PASSWORD=change-this-strong-password
+WEB_ADMIN_SECRET_KEY=change-this-long-random-secret
+WEB_ADMIN_HOST=0.0.0.0
+WEB_ADMIN_PORT=8080
+WEB_ADMIN_ACTION_TELEGRAM_ID=
+```
+
+`WEB_ADMIN_ACTION_TELEGRAM_ID` is used in logs for web actions. If empty, the first
+ID in `ADMIN_TELEGRAM_IDS` is used.
+
+Run it with Docker Compose:
+
+```bash
+docker compose up -d --build web
+```
+
+Compose binds the panel to `127.0.0.1:8080` on the server. The safest access method is
+an SSH tunnel:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 user@your-server
+```
+
+Then open `http://127.0.0.1:8080`.
+
+The web panel supports dashboard stats, pending order approval/rejection, wallet top-up
+approval/rejection and correction, user search/details, wallet ledger, order history,
+referral overview, manual wallet adjustment, VPN service actions, bot settings,
+reseller management, reseller bulk order approval/resend, support replies, and
+broadcasts by segment.
+
+Keep the panel behind SSH tunnel, VPN, or a trusted HTTPS reverse proxy. Do not expose
+it directly to the public internet with a weak password.
+
 ## Recommended Client Apps
 
 The bot sends these after successful activation:

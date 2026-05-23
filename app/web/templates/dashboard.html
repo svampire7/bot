@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid stats">
+  {% for key, value in stats.items() %}
+    <div class="stat">
+      <div class="label">{{ key.replace("_", " ").title() }}</div>
+      <div class="value">{{ value|toman if "revenue" in key or "topup" in key else value }}</div>
+    </div>
+  {% endfor %}
+</section>
+<section class="card">
+  <h2>Quick Actions</h2>
+  <div class="actions">
+    <a class="button" href="/orders">Review Orders</a>
+    <a class="button" href="/wallet/topups">Review Top-ups</a>
+    <a class="button secondary" href="/users">Search Users</a>
+    <a class="button secondary" href="/settings">Edit Settings</a>
+  </div>
+</section>
+{% endblock %}

@@ -23,6 +23,13 @@ class Settings(BaseSettings):
         default=900,
         alias="TRAFFIC_ALERT_CHECK_INTERVAL_SECONDS",
     )
+    web_admin_enabled: bool = Field(default=True, alias="WEB_ADMIN_ENABLED")
+    web_admin_username: str = Field(default="admin", alias="WEB_ADMIN_USERNAME")
+    web_admin_password: str = Field(default="", alias="WEB_ADMIN_PASSWORD")
+    web_admin_secret_key: str = Field(default="", alias="WEB_ADMIN_SECRET_KEY")
+    web_admin_host: str = Field(default="0.0.0.0", alias="WEB_ADMIN_HOST")
+    web_admin_port: int = Field(default=8080, alias="WEB_ADMIN_PORT")
+    web_admin_action_telegram_id: int | None = Field(default=None, alias="WEB_ADMIN_ACTION_TELEGRAM_ID")
 
     marzban_base_url: str = Field(alias="MARZBAN_BASE_URL")
     marzban_username: str = Field(alias="MARZBAN_USERNAME")
@@ -83,6 +90,14 @@ class Settings(BaseSettings):
         if not self.admin_telegram_ids_raw:
             return []
         return [int(item.strip()) for item in self.admin_telegram_ids_raw.split(",") if item.strip()]
+
+    @property
+    def web_admin_log_telegram_id(self) -> int:
+        return self.web_admin_action_telegram_id or (self.admin_telegram_ids[0] if self.admin_telegram_ids else 0)
+
+    @property
+    def web_admin_session_secret(self) -> str:
+        return self.web_admin_secret_key or self.bot_token
 
     @field_validator("default_language")
     @classmethod

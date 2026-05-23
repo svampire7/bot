@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <form method="post" action="/settings">
+    <div class="form-grid">
+      {% for key, value in values.items() %}
+        <label>{{ key.replace("_", " ").title() }}
+          <input name="{{ key }}" value="{{ value }}">
+        </label>
+      {% endfor %}
+    </div>
+    <p class="muted">Boolean settings accept 1/0, true/false, enabled/disabled. Packages use 1:220000,3:600000 format.</p>
+    <button type="submit">Save Settings</button>
+  </form>
+</section>
+{% endblock %}

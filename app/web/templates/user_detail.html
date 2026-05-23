@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="grid stats">
+  <div class="stat"><div class="label">Telegram ID</div><div class="value">{{ user.telegram_id }}</div></div>
+  <div class="stat"><div class="label">Username</div><div class="value">@{{ user.telegram_username or "-" }}</div></div>
+  <div class="stat"><div class="label">Wallet</div><div class="value">{{ balance|toman }}</div></div>
+  <div class="stat"><div class="label">Language</div><div class="value">{{ user.language }}</div></div>
+</section>
+<section class="card">
+  <h2>Service</h2>
+  {% if service %}
+    <p><code>{{ service.marzban_username }}</code> <span class="badge ok">{{ service.status }}</span></p>
+    <p>Total: {{ service.data_limit_gb|gb }} | Used: {{ service.used_traffic_gb|gb }} | Remaining: {{ service.remaining_traffic_gb|gb }}</p>
+    <p class="mono">{{ service.subscription_url or "-" }}</p>
+    <div class="actions">
+      <form method="post" action="/users/{{ user.id }}/service/add-traffic" class="inline"><input name="gb" placeholder="GB" inputmode="numeric"><button type="submit">Add Traffic</button></form>
+      <form method="post" action="/users/{{ user.id }}/service/disable"><button class="warning" type="submit">Disable</button></form>
+      <form method="post" action="/users/{{ user.id }}/service/enable"><button type="submit">Enable</button></form>
+      <form method="post" action="/users/{{ user.id }}/service/delete"><button class="danger" type="submit">Delete</button></form>
+    </div>
+  {% else %}
+    <p class="muted">No active service.</p>
+  {% endif %}
+  <form method="post" action="/users/{{ user.id }}/service/new" class="inline">
+    <input name="gb" placeholder="New service GB" inputmode="numeric">
+    <button type="submit">Create New Service</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Wallet Adjustment</h2>
+  <form method="post" action="/users/{{ user.id }}/wallet-adjust" class="form-grid">
+    <label>Amount, positive or negative<input name="amount" placeholder="500000 or -500000"></label>
+    <label>Note<input name="note" placeholder="Reason"></label>
+    <button type="submit">Save Adjustment</button>
+  </form>
+</section>
+<section class="card">
+  <h2>Referral</h2>
+  <p>Source: {% if referrer %}{{ referrer.telegram_id }} @{{ referrer.telegram_username or "-" }}{% else %}-{% endif %}</p>
+  <p>Invited: {{ refs.invited }} | Paid referrals: {{ refs.paid }} | Pending bonus: {{ refs.pending_bonus_gb }}GB | First bonus awarded: {{ user.referral_bonus_awarded }}</p>
+</section>
+<section class="card">
+  <h2>Wallet Transactions</h2>
+  <table><thead><tr><th>ID</th><th>Type</th><th>Amount</th><th>Status</th><th>Note</th><th>Date</th></tr></thead><tbody>
+    {% for tx in txs %}
+    <tr><td>#{{ tx.id }}</td><td>{{ tx.transaction_type }}</td><td>{{ tx.amount_toman|toman }}</td><td>{{ tx.status }}</td><td>{{ tx.admin_note or "-" }}</td><td>{{ tx.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No transactions.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+<section class="card">
+  <h2>Orders</h2>
+  <table><thead><tr><th>ID</th><th>GB</th><th>Price</th><th>Status</th><th>Payment</th><th>Date</th></tr></thead><tbody>
+    {% for order in orders %}
+    <tr><td>#{{ order.id }}</td><td>{{ order.gb_amount }}</td><td>{{ order.price_toman|toman }}</td><td>{{ order.status }}</td><td>{{ order.payment_method }}</td><td>{{ order.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <form class="toolbar" method="get" action="/users">
+    <input name="q" value="{{ q }}" placeholder="Telegram ID, username, or Marzban username">
+    <button type="submit">Search</button>
+    <a class="button secondary" href="/users">All Users</a>
+  </form>
+  <table>
+    <thead><tr><th>User</th><th>Balance</th><th>Service</th><th>Referral</th><th>Joined</th><th></th></tr></thead>
+    <tbody>
+      {% for user, referrer, invited in rows %}
+      <tr>
+        <td>@{{ user.telegram_username or "-" }}<br><span class="muted">{{ user.telegram_id }} | {{ user.first_name or "-" }}</span></td>
+        <td>{{ balances[user.id]|toman }} Toman</td>
+        <td>{% if services[user.id] %}<code>{{ services[user.id].marzban_username }}</code>{% else %}-{% endif %}</td>
+        <td>From: {{ referrer or "-" }}<br>Invited: {{ invited }}</td>
+        <td>{{ user.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td><a class="button secondary" href="/users/{{ user.id }}">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No users found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="pagination">
+    {% if prev_url %}<a class="button secondary" href="{{ prev_url }}">Previous</a>{% endif %}
+    {% if next_url %}<a class="button secondary" href="{{ next_url }}">Next</a>{% endif %}
+  </div>
+</section>
+{% endblock %}
