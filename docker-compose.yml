@@ -48,8 +48,6 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.web.main:app --host $${WEB_ADMIN_HOST:-0.0.0.0} --port $${WEB_ADMIN_PORT:-8080}"
-    ports:
-      - "127.0.0.1:8080:8080"
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -58,6 +56,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  web-admin-nginx:
+    image: nginx:1.27-alpine
+    env_file:
+      - .env
+    environment:
+      WEB_ADMIN_UPSTREAM: http://web:8080
+    command: >
+      sh -c "/app/scripts/render_web_admin_nginx.sh &&
+             nginx -g 'daemon off;'"
+    ports:
+      - "${WEB_ADMIN_BIND_ADDRESS:-0.0.0.0}:${WEB_ADMIN_PUBLIC_PORT:-8080}:80"
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      - web
     restart: unless-stopped
 
   db-backup:

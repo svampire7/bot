@@ -322,6 +322,8 @@ WEB_ADMIN_PASSWORD=change-this-strong-password
 WEB_ADMIN_SECRET_KEY=change-this-long-random-secret
 WEB_ADMIN_HOST=0.0.0.0
 WEB_ADMIN_PORT=8080
+WEB_ADMIN_BIND_ADDRESS=0.0.0.0
+WEB_ADMIN_PUBLIC_PORT=8080
 WEB_ADMIN_ACTION_TELEGRAM_ID=
 WEB_ADMIN_ALLOWED_IPS=
 ```
@@ -331,6 +333,8 @@ ID in `ADMIN_TELEGRAM_IDS` is used.
 
 `WEB_ADMIN_ALLOWED_IPS` is optional. When set, only these comma-separated source IPs
 can access the web admin panel, for example `WEB_ADMIN_ALLOWED_IPS=81.91.146.90`.
+The Dockerized Nginx proxy also uses this value and publishes the panel on
+`WEB_ADMIN_PUBLIC_PORT`.
 
 Run it with Docker Compose:
 
@@ -338,14 +342,16 @@ Run it with Docker Compose:
 docker compose up -d --build web
 ```
 
-Compose binds the panel to `127.0.0.1:8080` on the server. The safest access method is
-an SSH tunnel:
+Compose publishes the panel through the `web-admin-nginx` service. If you keep
+`WEB_ADMIN_BIND_ADDRESS=127.0.0.1`, the safest access method is an SSH tunnel:
 
 ```bash
 ssh -L 8080:127.0.0.1:8080 user@your-server
 ```
 
-Then open `http://127.0.0.1:8080`.
+Then open `http://127.0.0.1:8080`. If you set `WEB_ADMIN_BIND_ADDRESS=0.0.0.0`,
+open `http://SERVER_IP:WEB_ADMIN_PUBLIC_PORT`; Nginx and the app will both enforce
+`WEB_ADMIN_ALLOWED_IPS`.
 
 The web panel supports dashboard stats, pending order approval/rejection, wallet top-up
 approval/rejection and correction, user search/details, wallet ledger, order history,
