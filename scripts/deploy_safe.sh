@@ -8,7 +8,8 @@ docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" run --rm \
 
 echo "Updating bot and web containers..."
 git pull --ff-only
-docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" up --build -d bot web web-admin-nginx db-backup
+docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" up --build -d bot web db-backup
+docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" up -d --force-recreate web-admin-nginx
 docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" ps
 docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" logs --tail=80 bot
 docker compose -p "${COMPOSE_PROJECT_NAME:-vpnbot}" logs --tail=40 web
