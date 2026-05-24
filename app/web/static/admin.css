@@ -508,6 +508,11 @@ button.warning,
   stroke-width: 1;
 }
 
+.chart-axis-label {
+  fill: var(--muted);
+  font: 700 12px Tahoma, "Segoe UI", Arial, sans-serif;
+}
+
 .chart-area {
   fill: rgba(15, 118, 110, 0.1);
 }

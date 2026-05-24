@@ -208,6 +208,11 @@ def sales_chart(series: list[dict[str, int | str]]) -> dict[str, object]:
     total_gb = sum(int(item["gb"]) for item in series)
     average_revenue = total_revenue // max(1, len(series))
     best_day = max(series, key=lambda item: int(item["revenue"])) if series else None
+    y_axis = [
+        {"y": height - padding_y, "value": 0, "label": "0"},
+        {"y": padding_y + chart_height / 2, "value": max_revenue // 2, "label": toman(max_revenue // 2)},
+        {"y": padding_y, "value": max_revenue, "label": toman(max_revenue)},
+    ]
     return {
         "width": width,
         "height": height,
@@ -221,6 +226,7 @@ def sales_chart(series: list[dict[str, int | str]]) -> dict[str, object]:
         "average_revenue": average_revenue,
         "best_day": best_day,
         "recent": list(reversed(series[-7:])),
+        "y_axis": y_axis,
     }
 
 

@@ -36,9 +36,10 @@
   </div>
   <div class="chart-card">
     <svg class="line-chart" viewBox="0 0 {{ sales.width }} {{ sales.height }}" role="img" aria-label="Daily sales chart">
-      <line class="chart-grid-line" x1="34" y1="234" x2="866" y2="234"></line>
-      <line class="chart-grid-line" x1="34" y1="130" x2="866" y2="130"></line>
-      <line class="chart-grid-line" x1="34" y1="26" x2="866" y2="26"></line>
+      {% for tick in sales.y_axis %}
+        <line class="chart-grid-line" x1="96" y1="{{ tick.y }}" x2="866" y2="{{ tick.y }}"></line>
+        <text class="chart-axis-label" x="88" y="{{ tick.y + 4 }}" text-anchor="end">{{ tick.label }}</text>
+      {% endfor %}
       {% if sales.area_path %}
         <path class="chart-area" d="{{ sales.area_path }}"></path>
       {% endif %}
