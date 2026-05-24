@@ -601,3 +601,28 @@ async def advanced_stats(session: AsyncSession) -> dict[str, int]:
         }
     )
     return data
+
+
+async def daily_sales_series(session: AsyncSession, days: int = 30) -> list[dict[str, int | str]]:
+    days = max(1, min(days, 120))
+    now = datetime.now(timezone.utc)
+    start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc) - timedelta(days=days - 1)
+    day_expr = func.date(Order.updated_at)
+    result = await session.execute(
+        select(
+            day_expr.label("day"),
+            func.coalesce(func.sum(Order.price_toman), 0).label("revenue"),
+            func.count(Order.id).label("orders"),
+            func.coalesce(func.sum(Order.gb_amount), 0).label("gb"),
+        )
+        .where(Order.status == OrderStatus.completed.value, Order.updated_at >= start)
+        .group_by(day_expr)
+        .order_by(day_expr)
+    )
+    rows = {str(day): (int(revenue or 0), int(orders or 0), int(gb or 0)) for day, revenue, orders, gb in result.all()}
+    series: list[dict[str, int | str]] = []
+    for index in range(days):
+        day = (start + timedelta(days=index)).date().isoformat()
+        revenue, orders, gb = rows.get(day, (0, 0, 0))
+        series.append({"date": day, "revenue": revenue, "orders": orders, "gb": gb})
+    return series

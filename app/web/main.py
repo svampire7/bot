@@ -36,6 +36,7 @@ from app.db.repositories import (
     active_service_for_user,
     add_support_message,
     advanced_stats,
+    daily_sales_series,
     order_with_user_for_update,
     pending_order_count,
     pending_orders,
@@ -172,6 +173,57 @@ def row_url(path: str, offset: int, limit: int = 20) -> str:
     return f"{path}?offset={max(0, offset)}&limit={limit}"
 
 
+def sales_chart(series: list[dict[str, int | str]]) -> dict[str, object]:
+    width = 900
+    height = 260
+    padding_x = 34
+    padding_y = 26
+    chart_width = width - padding_x * 2
+    chart_height = height - padding_y * 2
+    max_revenue = max([int(item["revenue"]) for item in series] + [1])
+    step_x = chart_width / max(1, len(series) - 1)
+    points: list[dict[str, object]] = []
+    for index, item in enumerate(series):
+        revenue = int(item["revenue"])
+        x = padding_x + index * step_x
+        y = padding_y + chart_height - (revenue / max_revenue * chart_height)
+        points.append(
+            {
+                **item,
+                "x": round(x, 2),
+                "y": round(y, 2),
+                "label": toman(revenue),
+            }
+        )
+    path = " ".join(
+        f"{'M' if index == 0 else 'L'} {point['x']} {point['y']}" for index, point in enumerate(points)
+    )
+    area_path = (
+        f"{path} L {points[-1]['x']} {height - padding_y} L {points[0]['x']} {height - padding_y} Z"
+        if points
+        else ""
+    )
+    total_revenue = sum(int(item["revenue"]) for item in series)
+    total_orders = sum(int(item["orders"]) for item in series)
+    total_gb = sum(int(item["gb"]) for item in series)
+    average_revenue = total_revenue // max(1, len(series))
+    best_day = max(series, key=lambda item: int(item["revenue"])) if series else None
+    return {
+        "width": width,
+        "height": height,
+        "max_revenue": max_revenue,
+        "points": points,
+        "path": path,
+        "area_path": area_path,
+        "total_revenue": total_revenue,
+        "total_orders": total_orders,
+        "total_gb": total_gb,
+        "average_revenue": average_revenue,
+        "best_day": best_day,
+        "recent": list(reversed(series[-7:])),
+    }
+
+
 async def notify_order_completed(
     bot: Bot,
     db: AsyncSession,
@@ -249,7 +301,8 @@ async def dashboard(
     data["pending_wallet_topups"] = await pending_wallet_topup_count(db)
     data["wallet_users"] = await wallet_user_count(db)
     data["support_tickets"] = await support_ticket_count(db)
-    return render(request, "dashboard.html", "Dashboard", stats=data)
+    sales = await daily_sales_series(db, days=30)
+    return render(request, "dashboard.html", "Dashboard", stats=data, sales=sales_chart(sales))
 
 
 @app.get("/orders", response_class=HTMLResponse)

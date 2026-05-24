@@ -465,6 +465,71 @@ button.warning,
   margin-top: 14px;
 }
 
+.chart-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.chart-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.chart-summary strong {
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.chart-card {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.line-chart {
+  display: block;
+  width: 100%;
+  min-width: 680px;
+  height: auto;
+}
+
+.chart-grid-line {
+  stroke: #e6ebf2;
+  stroke-width: 1;
+}
+
+.chart-area {
+  fill: rgba(15, 118, 110, 0.1);
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--brand);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-point {
+  fill: #fff;
+  stroke: var(--brand);
+  stroke-width: 3;
+}
+
+.compact-table table {
+  font-size: 13px;
+}
+
 .login-page {
   display: grid;
   place-items: center;
