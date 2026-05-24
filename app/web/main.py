@@ -79,6 +79,7 @@ from app.utils.validators import parse_positive_int, parse_toman_amount, sanitiz
 settings = get_settings()
 templates = Jinja2Templates(directory="app/web/templates")
 i18n = I18n(Path("app/bot/i18n"), settings.default_language)
+templates.env.globals["admin_css"] = Path("app/web/static/admin.css").read_text()
 
 
 @asynccontextmanager
@@ -156,6 +157,7 @@ def context(request: Request, title: str, **kwargs: object) -> dict[str, object]
     return {
         "request": request,
         "title": title,
+        "current_path": request.url.path,
         "msg": request.query_params.get("msg"),
         "level": request.query_params.get("level", "ok"),
         **kwargs,

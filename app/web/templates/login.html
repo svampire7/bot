@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Login | VPN Bot Admin</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}?v=2">
+    <style>{{ admin_css|safe }}</style>
   </head>
   <body class="login-page">
     <section class="card login-card">

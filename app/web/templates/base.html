@@ -4,23 +4,24 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }} | VPN Bot Admin</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='admin.css') }}?v=2">
+    <style>{{ admin_css|safe }}</style>
   </head>
   <body>
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">Safe-VPN Admin</div>
         <nav class="nav">
-          <a href="/">Dashboard</a>
-          <a href="/orders">Pending Orders</a>
-          <a href="/wallet/topups">Wallet Top-ups</a>
-          <a href="/users">Users</a>
-          <a href="/services">Active Services</a>
-          <a href="/support">Support</a>
-          <a href="/resellers">Resellers</a>
-          <a href="/reseller-orders">Bulk Orders</a>
-          <a href="/settings">Settings</a>
-          <a href="/broadcast">Broadcast</a>
+          <a class="{{ 'active' if current_path == '/' else '' }}" href="/">Dashboard</a>
+          <a class="{{ 'active' if current_path.startswith('/orders') else '' }}" href="/orders">Pending Orders</a>
+          <a class="{{ 'active' if current_path.startswith('/wallet') else '' }}" href="/wallet/topups">Wallet Top-ups</a>
+          <a class="{{ 'active' if current_path.startswith('/users') else '' }}" href="/users">Users</a>
+          <a class="{{ 'active' if current_path.startswith('/services') else '' }}" href="/services">Active Services</a>
+          <a class="{{ 'active' if current_path.startswith('/support') else '' }}" href="/support">Support</a>
+          <a class="{{ 'active' if current_path.startswith('/resellers') else '' }}" href="/resellers">Resellers</a>
+          <a class="{{ 'active' if current_path.startswith('/reseller-orders') else '' }}" href="/reseller-orders">Bulk Orders</a>
+          <a class="{{ 'active' if current_path.startswith('/settings') else '' }}" href="/settings">Settings</a>
+          <a class="{{ 'active' if current_path.startswith('/broadcast') else '' }}" href="/broadcast">Broadcast</a>
         </nav>
         <form class="logout" method="post" action="/logout">
           <button type="submit">Logout</button>
@@ -28,7 +29,10 @@
       </aside>
       <main class="main">
         <div class="topbar">
-          <h1>{{ title }}</h1>
+          <div class="page-title">
+            <h1>{{ title }}</h1>
+            <span class="muted">Safe-VPN operations console</span>
+          </div>
           <span class="badge">Web Admin</span>
         </div>
         {% if msg %}

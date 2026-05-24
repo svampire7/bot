@@ -2,27 +2,42 @@
 {% block content %}
 <section class="split">
   <div class="card">
-    <h2>Tickets</h2>
+    <div class="toolbar">
+      <h2>Tickets</h2>
+      <a class="button secondary" href="/support">Refresh</a>
+    </div>
+    <div class="ticket-list">
     {% for ticket in tickets %}
-      <p>
-        <a class="button secondary" href="/support?ticket_id={{ ticket.id }}">#{{ ticket.id }} @{{ ticket.user.telegram_username or "-" }}</a>
-        <br><span class="muted">{{ ticket.user.telegram_id }} | {{ ticket.status }} | {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
-        <br>{{ ticket.last_message_preview or "-" }}
-      </p>
+      <a class="ticket-item {{ 'active' if selected and selected.id == ticket.id else '' }}" href="/support?ticket_id={{ ticket.id }}">
+        <span class="ticket-title">
+          <span>#{{ ticket.id }} @{{ ticket.user.telegram_username or "-" }}</span>
+          <span class="badge {{ 'ok' if ticket.status == 'answered' else 'warn' }}">{{ ticket.status }}</span>
+        </span>
+        <span class="muted">{{ ticket.user.telegram_id }} | {{ ticket.updated_at.strftime("%Y-%m-%d %H:%M") }}</span>
+        <span class="ticket-preview">{{ ticket.last_message_preview or "-" }}</span>
+      </a>
     {% else %}
       <p class="muted">No support tickets.</p>
     {% endfor %}
+    </div>
   </div>
   <div class="card">
     {% if selected %}
-      <h2>Ticket #{{ selected.id }}</h2>
-      <p>@{{ selected.user.telegram_username or "-" }} | {{ selected.user.telegram_id }} | {{ selected.status }}</p>
+      <div class="toolbar">
+        <div>
+          <h2>Ticket #{{ selected.id }}</h2>
+          <div class="muted">@{{ selected.user.telegram_username or "-" }} | {{ selected.user.telegram_id }} | {{ selected.status }}</div>
+        </div>
+        <a class="button secondary" href="/users/{{ selected.user_id }}">Open User</a>
+      </div>
       <div class="thread">
         {% for item in messages %}
           <div class="bubble {{ 'admin' if item.sender_type == 'admin' else '' }}">
-            <strong>{{ item.sender_type }}</strong>
-            <div>{{ item.text or item.message_type or "-" }}</div>
-            <small class="muted">{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</small>
+            <div class="bubble-head">
+              <span>{{ item.sender_type }}</span>
+              <span>{{ item.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+            </div>
+            <div class="bubble-body">{{ item.text or item.message_type or "-" }}</div>
           </div>
         {% endfor %}
       </div>
