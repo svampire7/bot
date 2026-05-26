@@ -20,12 +20,15 @@ from app.db.repositories import (
     user_order_history,
 )
 from app.services.vpn_service import VPNProvisioningService
-from app.utils.formatters import html_code, optional_gb, toman
+from app.db.models import PackageType
+from app.utils.formatters import html_code, optional_datetime, optional_gb, toman
 
 router = Router()
 
 
 def low_traffic_warning(_, service) -> str:
+    if service.package_type == PackageType.unlimited_time.value:
+        return ""
     remaining = float(service.remaining_traffic_gb or 0)
     total = float(service.data_limit_gb or 0)
     threshold = max(1.0, total * 0.2)
@@ -51,16 +54,30 @@ async def my_service(callback: CallbackQuery, sessionmaker: async_sessionmaker, 
             except Exception:
                 await session.rollback()
             await callback.message.edit_text(  # type: ignore[union-attr]
-                _("service_info",
-                  username=service.marzban_username,
-                  total_gb=optional_gb(service.data_limit_gb),
-                  used=optional_gb(service.used_traffic_gb),
-                  remaining=optional_gb(service.remaining_traffic_gb),
-                  subscription_url=html_code(service.subscription_url or "-"))
+                service_info_text(_, service)
                 + low_traffic_warning(_, service),
                 reply_markup=service_copy_keyboard(_, service.subscription_url),
             )
     await callback.answer()
+
+
+def service_info_text(_, service) -> str:
+    if service.package_type == PackageType.unlimited_time.value:
+        return _(
+            "service_info_unlimited",
+            username=service.marzban_username,
+            used=optional_gb(service.used_traffic_gb),
+            expire_at=optional_datetime(service.expire_at),
+            subscription_url=html_code(service.subscription_url or "-"),
+        )
+    return _(
+        "service_info",
+        username=service.marzban_username,
+        total_gb=optional_gb(service.data_limit_gb),
+        used=optional_gb(service.used_traffic_gb),
+        remaining=optional_gb(service.remaining_traffic_gb),
+        subscription_url=html_code(service.subscription_url or "-"),
+    )
 
 
 @router.callback_query(ServiceCb.filter())
@@ -86,14 +103,7 @@ async def my_orders(callback: CallbackQuery, sessionmaker: async_sessionmaker, _
     lines = []
     for order in orders:
         lines.append(
-            _("order_summary_line",
-              id=order.id,
-              type=_("order_type_" + order.order_type),
-              status=_("status_" + order.status),
-              gb=order.gb_amount,
-              price=toman(order.price_toman),
-              date=order.created_at.strftime("%Y-%m-%d %H:%M"),
-              marzban_username=order.marzban_username or "-")
+            order_summary_text(_, order)
         )
     await callback.message.edit_text(_("orders_title") + "\n\n" + "\n".join(lines), reply_markup=orders_keyboard([o.id for o in orders], _))  # type: ignore[union-attr]
     await callback.answer()
@@ -113,20 +123,69 @@ async def order_detail(
     if not order:
         await callback.answer(_("order_not_found"), show_alert=True)
         return
-    text = _("order_detail",
-             id=order.id,
-             type=_("order_type_" + order.order_type),
-             status=_("status_" + order.status),
-             gb=order.gb_amount,
-             price=toman(order.price_toman),
-             original_price=toman(order.original_price_toman or order.price_toman),
-             discount=toman(order.discount_amount_toman or 0),
-             discount_code=order.discount_code or "-",
-             payment_method=_("payment_method_" + order.payment_method),
-             crypto_tx_hash=order.crypto_tx_hash or "-",
-             crypto_expected_usdt=order.crypto_expected_usdt or "-",
-             date=order.created_at.strftime("%Y-%m-%d %H:%M"),
-             marzban_username=order.marzban_username or "-",
-             note=order.admin_note or "-")
+    text = order_detail_text(_, order)
     await callback.message.edit_text(text, reply_markup=order_detail_keyboard(order.id, order.status, _))  # type: ignore[union-attr]
     await callback.answer()
+
+
+def order_summary_text(_, order) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return _(
+            "order_summary_line_unlimited",
+            id=order.id,
+            type=_("order_type_" + order.order_type),
+            status=_("status_" + order.status),
+            duration=order.duration_days or "-",
+            price=toman(order.price_toman),
+            date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+            marzban_username=order.marzban_username or "-",
+        )
+    return _(
+        "order_summary_line",
+        id=order.id,
+        type=_("order_type_" + order.order_type),
+        status=_("status_" + order.status),
+        gb=order.gb_amount,
+        price=toman(order.price_toman),
+        date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+        marzban_username=order.marzban_username or "-",
+    )
+
+
+def order_detail_text(_, order) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return _(
+            "order_detail_unlimited",
+            id=order.id,
+            type=_("order_type_" + order.order_type),
+            status=_("status_" + order.status),
+            duration=order.duration_days or "-",
+            expire_at=optional_datetime(order.expire_at),
+            price=toman(order.price_toman),
+            original_price=toman(order.original_price_toman or order.price_toman),
+            discount=toman(order.discount_amount_toman or 0),
+            discount_code=order.discount_code or "-",
+            payment_method=_("payment_method_" + order.payment_method),
+            crypto_tx_hash=order.crypto_tx_hash or "-",
+            crypto_expected_usdt=order.crypto_expected_usdt or "-",
+            date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+            marzban_username=order.marzban_username or "-",
+            note=order.admin_note or "-",
+        )
+    return _(
+        "order_detail",
+        id=order.id,
+        type=_("order_type_" + order.order_type),
+        status=_("status_" + order.status),
+        gb=order.gb_amount,
+        price=toman(order.price_toman),
+        original_price=toman(order.original_price_toman or order.price_toman),
+        discount=toman(order.discount_amount_toman or 0),
+        discount_code=order.discount_code or "-",
+        payment_method=_("payment_method_" + order.payment_method),
+        crypto_tx_hash=order.crypto_tx_hash or "-",
+        crypto_expected_usdt=order.crypto_expected_usdt or "-",
+        date=order.created_at.strftime("%Y-%m-%d %H:%M"),
+        marzban_username=order.marzban_username or "-",
+        note=order.admin_note or "-",
+    )

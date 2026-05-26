@@ -62,6 +62,10 @@ class Settings(BaseSettings):
         default="1:220000,3:600000,5:900000,10:1600000",
         alias="PACKAGE_PRICES_TOMAN",
     )
+    unlimited_time_packages_toman: str = Field(
+        default="30:900000,90:2400000,180:4500000,365:8000000",
+        alias="UNLIMITED_TIME_PACKAGES_TOMAN",
+    )
     min_custom_gb: int = Field(default=1, alias="MIN_CUSTOM_GB")
     max_custom_gb: int = Field(default=1000, alias="MAX_CUSTOM_GB")
 

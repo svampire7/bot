@@ -146,6 +146,11 @@ class MarzbanClient:
         data = await self.request("POST", "/api/user", json=payload)
         return MarzbanUser.model_validate(data)
 
+    async def create_unlimited_time_user(self, username: str, expire_at: datetime) -> MarzbanUser:
+        payload = await self._user_payload(username, 0, int(expire_at.timestamp()))
+        data = await self.request("POST", "/api/user", json=payload)
+        return MarzbanUser.model_validate(data)
+
     async def create_trial_user(
         self, username: str, traffic_mb: int, expire_at: datetime
     ) -> MarzbanUser:
@@ -181,6 +186,20 @@ class MarzbanClient:
                 "data_limit": new_limit_bytes,
                 "data_limit_reset_strategy": "no_reset",
                 "expire": 0,
+                "status": "active",
+            },
+        )
+
+    async def set_unlimited_time_user(self, username: str, expire_at: datetime) -> MarzbanUser:
+        current = await self.get_user(username)
+        if not current:
+            raise MarzbanAPIError(f"Marzban user {username} not found")
+        return await self.update_user(
+            username,
+            {
+                "data_limit": 0,
+                "data_limit_reset_strategy": "no_reset",
+                "expire": int(expire_at.timestamp()),
                 "status": "active",
             },
         )
@@ -223,4 +242,5 @@ class MarzbanClient:
             data_limit=user.data_limit,
             used_traffic=user.used_traffic,
             remaining_traffic=remaining,
+            expire=user.expire,
         )

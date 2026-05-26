@@ -22,8 +22,28 @@ def parse_package_prices(value: str) -> list[tuple[int, int]]:
     return sorted(packages, key=lambda item: item[0])
 
 
+def parse_unlimited_time_packages(value: str) -> list[tuple[int, int]]:
+    packages: list[tuple[int, int]] = []
+    for item in value.split(","):
+        if not item.strip() or ":" not in item:
+            continue
+        days_text, price_text = item.split(":", 1)
+        days = int(days_text.strip())
+        price = int(price_text.strip())
+        if days <= 0 or price <= 0:
+            raise ValueError("Package days and price must be positive")
+        packages.append((days, price))
+    if not packages:
+        raise ValueError("At least one package is required")
+    return sorted(packages, key=lambda item: item[0])
+
+
 def format_package_prices(packages: list[tuple[int, int]]) -> str:
     return ",".join(f"{gb}:{price}" for gb, price in packages)
+
+
+def format_unlimited_time_packages(packages: list[tuple[int, int]]) -> str:
+    return ",".join(f"{days}:{price}" for days, price in packages)
 
 
 class PaymentService:
@@ -39,6 +59,17 @@ class PaymentService:
 
     async def package_price(self, session: AsyncSession, gb: int) -> int | None:
         return dict(await self.package_prices(session)).get(gb)
+
+    async def unlimited_time_packages(self, session: AsyncSession) -> list[tuple[int, int]]:
+        value = await get_setting(
+            session,
+            "unlimited_time_packages_toman",
+            self.settings.unlimited_time_packages_toman,
+        )
+        return parse_unlimited_time_packages(value)
+
+    async def unlimited_time_package_price(self, session: AsyncSession, days: int) -> int | None:
+        return dict(await self.unlimited_time_packages(session)).get(days)
 
     async def card_number(self, session: AsyncSession) -> str:
         return await get_setting(session, "card_number", self.settings.card_number)

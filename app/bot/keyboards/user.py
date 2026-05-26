@@ -13,6 +13,10 @@ class PackageCb(CallbackData, prefix="pkg"):
     gb: int
 
 
+class UnlimitedPackageCb(CallbackData, prefix="unlim"):
+    days: int
+
+
 class OrderCb(CallbackData, prefix="ord"):
     action: str
     order_id: int
@@ -33,6 +37,7 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("free_trial"), callback_data="menu:trial")
     builder.button(text=_("buy_vpn"), callback_data="menu:buy")
+    builder.button(text=_("buy_unlimited_time"), callback_data="menu:buy_unlimited")
     builder.button(text=_("my_service"), callback_data="menu:service")
     builder.button(text=_("wallet"), callback_data="menu:wallet")
     builder.button(text=_("my_orders"), callback_data="menu:orders")
@@ -42,7 +47,7 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("reseller_panel"), callback_data="menu:reseller")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -92,6 +97,17 @@ def packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarku
     builder.button(text=_("custom_gb"), callback_data="pkg:custom")
     builder.button(text=_("back"), callback_data="menu:main")
     builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def unlimited_packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarkup:
+    from app.utils.formatters import duration_label, toman
+
+    builder = InlineKeyboardBuilder()
+    for days, price in packages:
+        builder.button(text=f"{duration_label(days)} - {toman(price)}", callback_data=UnlimitedPackageCb(days=days))
+    builder.button(text=_("back"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()
 
 

@@ -24,6 +24,7 @@ from app.config import get_settings
 from app.db.models import (
     Order,
     OrderStatus,
+    PackageType,
     ResellerBulkOrderStatus,
     SupportTicket,
     User,
@@ -68,12 +69,16 @@ from app.services.bulk_order_service import (
     reseller_bulk_order_with_accounts,
 )
 from app.services.broadcast_service import load_broadcast_recipients, send_broadcast
-from app.services.payment_service import PaymentService, format_package_prices
+from app.services.payment_service import (
+    PaymentService,
+    format_package_prices,
+    format_unlimited_time_packages,
+)
 from app.services.referral_service import notify_referrer_about_reward
 from app.services.reseller_service import add_reseller, list_resellers, set_reseller_active
 from app.services.wallet_service import WalletService
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
-from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
+from app.utils.formatters import duration_label, html_code, html_code_lines, optional_datetime, optional_gb, toman
 from app.utils.validators import parse_positive_int, parse_toman_amount, sanitize_username
 
 
@@ -241,18 +246,31 @@ async def notify_order_completed(
     user = await db.get(User, order.user_id)
     if not user:
         return
-    text = i18n.t(
-        "service_ready",
-        user.language,
-        purchased_gb=order.gb_amount,
-        total_gb=optional_gb(service.data_limit_gb),
-        used=optional_gb(service.used_traffic_gb),
-        remaining=optional_gb(service.remaining_traffic_gb),
-        subscription_url=html_code(service.subscription_url or "-"),
-        config_links=html_code_lines(config_links)
-        if config_links
-        else i18n.t("configs_not_available", user.language),
-    )
+    if order.package_type == PackageType.unlimited_time.value:
+        text = i18n.t(
+            "service_ready_unlimited",
+            user.language,
+            duration=duration_label(order.duration_days),
+            expire_at=optional_datetime(service.expire_at),
+            used=optional_gb(service.used_traffic_gb),
+            subscription_url=html_code(service.subscription_url or "-"),
+            config_links=html_code_lines(config_links)
+            if config_links
+            else i18n.t("configs_not_available", user.language),
+        )
+    else:
+        text = i18n.t(
+            "service_ready",
+            user.language,
+            purchased_gb=order.gb_amount,
+            total_gb=optional_gb(service.data_limit_gb),
+            used=optional_gb(service.used_traffic_gb),
+            remaining=optional_gb(service.remaining_traffic_gb),
+            subscription_url=html_code(service.subscription_url or "-"),
+            config_links=html_code_lines(config_links)
+            if config_links
+            else i18n.t("configs_not_available", user.language),
+        )
     if referral_reward.referred_bonus_gb:
         text += "\n\n" + i18n.t(
             "referral_friend_bonus_applied",
@@ -668,6 +686,9 @@ async def settings_page(
     values = {
         "price_per_gb_toman": await payment.price_per_gb(db),
         "package_prices_toman": format_package_prices(await payment.package_prices(db)),
+        "unlimited_time_packages_toman": format_unlimited_time_packages(
+            await payment.unlimited_time_packages(db)
+        ),
         "min_custom_gb": await payment.min_custom_gb(db),
         "max_custom_gb": await payment.max_custom_gb(db),
         "trial_enabled": "1" if await payment.trial_enabled(db) else "0",

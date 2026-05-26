@@ -11,17 +11,20 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.user import (
     PackageCb,
+    UnlimitedPackageCb,
     back_to_menu_keyboard,
     crypto_payment_keyboard,
     main_menu,
     packages_keyboard,
     payment_keyboard,
     service_copy_keyboard,
+    unlimited_packages_keyboard,
     wallet_keyboard,
     wallet_purchase_keyboard,
 )
 from app.config import Settings
 from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
+from app.db.models import PackageType
 from app.services.crypto_service import (
     CryptoPaymentError,
     normalize_tx_hash,
@@ -35,7 +38,7 @@ from app.services.payment_service import PaymentService
 from app.services.referral_service import notify_referrer_about_reward
 from app.services.vpn_service import VPNProvisioningService
 from app.services.wallet_service import InsufficientWalletBalance, WalletService
-from app.utils.formatters import html_code, html_code_lines, html_escape, optional_gb, toman
+from app.utils.formatters import duration_label, html_code, html_code_lines, html_escape, optional_datetime, optional_gb, toman
 from app.utils.validators import parse_positive_int
 
 router = Router()
@@ -58,6 +61,8 @@ async def show_payment(
     settings,
     _,
     package_price: int | None = None,
+    package_type: str = PackageType.traffic.value,
+    duration_days: int | None = None,
 ):
     payment = PaymentService(settings)
     assert callback.from_user
@@ -72,19 +77,37 @@ async def show_payment(
         price_per_gb = await payment.price_per_gb(session)
         min_gb = await payment.min_custom_gb(session)
         max_gb = await payment.max_custom_gb(session)
-        if gb < min_gb or gb > max_gb:
+        if package_type == PackageType.traffic.value and (gb < min_gb or gb > max_gb):
             await callback.message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))  # type: ignore[union-attr]
             return
         price = package_price if package_price is not None else gb * price_per_gb
         balance = await WalletService().balance(session, user.id)
-        await state.update_data(gb=gb, price=price, original_price=price, discount_code=None, discount_amount=0)
+        await state.update_data(
+            gb=gb,
+            price=price,
+            original_price=price,
+            discount_code=None,
+            discount_amount=0,
+            package_type=package_type,
+            duration_days=duration_days,
+        )
         await session.commit()
     await state.set_state(BuyStates.payment_method)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("wallet_purchase_prompt", gb=gb, price=toman(price), balance=toman(balance)),
+        _("wallet_purchase_prompt",
+          package=order_package_label(_, package_type, gb, duration_days),
+          gb=gb,
+          price=toman(price),
+          balance=toman(balance)),
         reply_markup=wallet_purchase_keyboard(_),
     )
     await callback.answer()
+
+
+def order_package_label(_, package_type: str, gb: int, duration_days: int | None = None) -> str:
+    if package_type == PackageType.unlimited_time.value:
+        return _("unlimited_time_package_label", duration=duration_label(duration_days))
+    return _("traffic_package_label", gb=gb)
 
 
 @router.callback_query(F.data.in_({"menu:buy", "menu:renew"}))
@@ -95,6 +118,20 @@ async def buy_menu(
     async with sessionmaker() as session:
         packages = await PaymentService(settings).package_prices(session)
     await callback.message.edit_text(_("select_package"), reply_markup=packages_keyboard(_, packages))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data == "menu:buy_unlimited")
+async def unlimited_buy_menu(
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
+) -> None:
+    await state.clear()
+    async with sessionmaker() as session:
+        packages = await PaymentService(settings).unlimited_time_packages(session)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("select_unlimited_package"),
+        reply_markup=unlimited_packages_keyboard(_, packages),
+    )
     await callback.answer()
 
 
@@ -113,6 +150,33 @@ async def package_selected(
         await callback.answer(_("package_not_available"), show_alert=True)
         return
     await show_payment(callback, state, callback_data.gb, sessionmaker, settings, _, package_price)
+
+
+@router.callback_query(UnlimitedPackageCb.filter())
+async def unlimited_package_selected(
+    callback: CallbackQuery,
+    callback_data: UnlimitedPackageCb,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    _,
+) -> None:
+    async with sessionmaker() as session:
+        package_price = await PaymentService(settings).unlimited_time_package_price(session, callback_data.days)
+    if package_price is None:
+        await callback.answer(_("package_not_available"), show_alert=True)
+        return
+    await show_payment(
+        callback,
+        state,
+        0,
+        sessionmaker,
+        settings,
+        _,
+        package_price,
+        package_type=PackageType.unlimited_time.value,
+        duration_days=callback_data.days,
+    )
 
 
 @router.callback_query(F.data == "pkg:custom")
@@ -151,10 +215,16 @@ async def custom_gb(
             original_price=price,
             discount_code=None,
             discount_amount=0,
+            package_type=PackageType.traffic.value,
+            duration_days=None,
         )
     await state.set_state(BuyStates.payment_method)
     await message.answer(
-        _("wallet_purchase_prompt", gb=gb, price=toman(price), balance=toman(balance)),
+        _("wallet_purchase_prompt",
+          package=order_package_label(_, PackageType.traffic.value, gb),
+          gb=gb,
+          price=toman(price),
+          balance=toman(balance)),
         reply_markup=wallet_purchase_keyboard(_),
     )
 
@@ -204,6 +274,8 @@ async def wallet_payment_selected(
                 discount_code=data.get("discount_code"),
                 discount_amount_toman=int(data.get("discount_amount") or 0),
                 payment_method="wallet",
+                package_type=str(data.get("package_type") or PackageType.traffic.value),
+                duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
             )
             order_id = order.id
             await WalletService().spend(session, user.id, final_price, order.id)
@@ -223,18 +295,7 @@ async def wallet_payment_selected(
                 text = ""
                 subscription_url = None
             else:
-                text = i18n.t(
-                    "service_ready",
-                    user.language,
-                    purchased_gb=order.gb_amount,
-                    total_gb=optional_gb(service.data_limit_gb),
-                    used=optional_gb(service.used_traffic_gb),
-                    remaining=optional_gb(service.remaining_traffic_gb),
-                    subscription_url=html_code(service.subscription_url or "-"),
-                    config_links=html_code_lines(config_links)
-                    if config_links
-                    else i18n.t("configs_not_available", user.language),
-                )
+                text = service_ready_text(i18n.t, user.language, order, service, config_links)
                 subscription_url = service.subscription_url
     except InsufficientWalletBalance:
         await callback.answer(_("insufficient_wallet_balance"), show_alert=True)
@@ -258,6 +319,33 @@ async def wallet_payment_selected(
     )
     await notify_referrer_about_reward(bot, i18n, referral_reward)
     await callback.answer()
+
+
+def service_ready_text(t, language: str, order, service, config_links: list[str]) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return t(
+            "service_ready_unlimited",
+            language,
+            duration=duration_label(order.duration_days),
+            expire_at=optional_datetime(service.expire_at),
+            used=optional_gb(service.used_traffic_gb),
+            subscription_url=html_code(service.subscription_url or "-"),
+            config_links=html_code_lines(config_links)
+            if config_links
+            else t("configs_not_available", language),
+        )
+    return t(
+        "service_ready",
+        language,
+        purchased_gb=order.gb_amount,
+        total_gb=optional_gb(service.data_limit_gb),
+        used=optional_gb(service.used_traffic_gb),
+        remaining=optional_gb(service.remaining_traffic_gb),
+        subscription_url=html_code(service.subscription_url or "-"),
+        config_links=html_code_lines(config_links)
+        if config_links
+        else t("configs_not_available", language),
+    )
 
 
 @router.callback_query(F.data == "pay:card", BuyStates.payment_method)
@@ -372,7 +460,16 @@ async def discount_code_entered(
         reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
     )
     await message.answer(
-        _("wallet_purchase_prompt", gb=int(data["gb"]), price=toman(final_price), balance=toman(balance)),
+        _("wallet_purchase_prompt",
+          package=order_package_label(
+              _,
+              str(data.get("package_type") or PackageType.traffic.value),
+              int(data["gb"]),
+              int(data["duration_days"]) if data.get("duration_days") else None,
+          ),
+          gb=int(data["gb"]),
+          price=toman(final_price),
+          balance=toman(balance)),
         reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
     )
 
@@ -434,6 +531,8 @@ async def crypto_tx_submitted(
             payment_method="crypto_ltc",
             crypto_tx_hash=tx_hash,
             crypto_expected_usdt=str(data.get("crypto_expected_usdt") or transfer.amount_ltc),
+            package_type=str(data.get("package_type") or PackageType.traffic.value),
+            duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
         )
         await session.commit()
     await state.clear()
@@ -484,6 +583,8 @@ async def receipt_uploaded(
             discount_code=data.get("discount_code"),
             discount_amount_toman=int(data.get("discount_amount") or 0),
             payment_method="card",
+            package_type=str(data.get("package_type") or PackageType.traffic.value),
+            duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
         )
         await session.commit()
     await state.clear()
@@ -523,6 +624,7 @@ async def notify_admins_about_order(
                    discount=toman(order.discount_amount_toman or 0),
                    discount_code=order.discount_code or "-",
                    payment_method=_("payment_method_" + order.payment_method),
+                   package=order_package_label(_, order.package_type, order.gb_amount, order.duration_days),
                    crypto_tx_hash=order.crypto_tx_hash or "-",
                    crypto_expected_usdt=order.crypto_expected_usdt or "-",
                    service="-",
@@ -530,6 +632,7 @@ async def notify_admins_about_order(
                    completed_orders=0,
                    duplicate_pending=0,
                    duplicate_receipts=0,
+                   duplicate_crypto=0,
                    date=order.created_at.strftime("%Y-%m-%d %H:%M"))
     for admin_id in settings.admin_telegram_ids:
         try:

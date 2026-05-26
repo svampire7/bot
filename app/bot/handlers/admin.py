@@ -55,6 +55,7 @@ from app.db.models import (
     Order,
     OrderStatus,
     ResellerBulkOrderStatus,
+    PackageType,
     User,
     VPNService,
     VPNServiceStatus,
@@ -102,12 +103,12 @@ from app.services.bulk_order_service import (
 from app.services.bulk_service import BulkPlanError, BulkService, parse_bulk_plan
 from app.services.broadcast_service import load_broadcast_recipients, send_broadcast
 from app.services.discount_service import parse_discount_definition
-from app.services.payment_service import PaymentService, format_package_prices
+from app.services.payment_service import PaymentService, format_package_prices, format_unlimited_time_packages
 from app.services.referral_service import notify_referrer_about_reward
 from app.services.reseller_service import add_reseller, list_resellers, set_reseller_active
 from app.services.wallet_service import WalletService
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
-from app.utils.formatters import html_code, html_code_lines, optional_gb, toman
+from app.utils.formatters import duration_label, html_code, html_code_lines, optional_gb, toman
 from app.utils.validators import parse_positive_int, parse_toman_amount, sanitize_username
 
 router = Router()
@@ -124,6 +125,12 @@ class AdminStates(StatesGroup):
     package_value = State()
     discount_value = State()
     qr_value = State()
+
+
+def admin_order_package_label(_, order: Order) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return _("unlimited_time_package_label", duration=duration_label(order.duration_days))
+    return _("traffic_package_label", gb=order.gb_amount)
     wallet_adjust_query = State()
     wallet_adjust_amount = State()
     wallet_adjust_note = State()
@@ -197,6 +204,7 @@ async def show_pending_at(callback: CallbackQuery, sessionmaker: async_sessionma
                      username=order.user.telegram_username or "-",
                      telegram_id=order.user.telegram_id,
                      gb=order.gb_amount,
+                     package=admin_order_package_label(_, order),
                      price=toman(order.price_toman),
                      original_price=toman(order.original_price_toman or order.price_toman),
                      discount=toman(order.discount_amount_toman or 0),
@@ -1131,6 +1139,7 @@ async def search_user_message(message: Message, state: FSMContext, sessionmaker:
                      username=user.telegram_username if user else "-",
                      telegram_id=user.telegram_id if user else "-",
                      gb=order.gb_amount,
+                     package=admin_order_package_label(_, order),
                      price=toman(order.price_toman),
                      original_price=toman(order.original_price_toman or order.price_toman),
                      discount=toman(order.discount_amount_toman or 0),
@@ -1338,13 +1347,12 @@ async def reseller_bulk_admin_action(
 
 @router.callback_query(F.data == "admin:settings")
 async def admin_settings(callback: CallbackQuery, settings: Settings, sessionmaker: async_sessionmaker, _) -> None:
-    from app.services.payment_service import PaymentService
-
     payment = PaymentService(settings)
     async with sessionmaker() as session:
         text = _("settings_text",
                  price=await payment.price_per_gb(session),
                  packages=format_package_prices(await payment.package_prices(session)),
+                 unlimited_packages=format_unlimited_time_packages(await payment.unlimited_time_packages(session)),
                  min_gb=await payment.min_custom_gb(session),
                  max_gb=await payment.max_custom_gb(session),
                  trial_status=_("enabled") if await payment.trial_enabled(session) else _("disabled"),

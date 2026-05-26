@@ -6,13 +6,19 @@
     <a class="button secondary" href="/orders">Refresh</a>
   </div>
   <table>
-    <thead><tr><th>ID</th><th>User</th><th>Traffic</th><th>Price</th><th>Payment</th><th>Receipt</th><th>Actions</th></tr></thead>
+    <thead><tr><th>ID</th><th>User</th><th>Package</th><th>Price</th><th>Payment</th><th>Receipt</th><th>Actions</th></tr></thead>
     <tbody>
       {% for order in rows %}
       <tr>
         <td>#{{ order.id }}<br><span class="badge warn">{{ order.status }}</span></td>
         <td>@{{ order.user.telegram_username or "-" }}<br><span class="muted">{{ order.user.telegram_id }}</span></td>
-        <td>{{ order.gb_amount }}GB</td>
+        <td>
+          {% if order.package_type == "unlimited_time" %}
+            Unlimited {{ order.duration_days }} days
+          {% else %}
+            {{ order.gb_amount }}GB
+          {% endif %}
+        </td>
         <td>{{ order.price_toman|toman }} Toman<br><span class="muted">Discount {{ order.discount_amount_toman|toman }}</span></td>
         <td>{{ order.payment_method }}<br><span class="mono">{{ order.crypto_tx_hash or "" }}</span></td>
         <td class="mono">{{ order.receipt_file_id or "-" }}</td>

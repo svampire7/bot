@@ -24,6 +24,23 @@ def optional_gb(value: float | int | None) -> str:
     return "-" if value is None else f"{float(value):.2f} GB"
 
 
+def optional_datetime(value) -> str:
+    if value is None:
+        return "-"
+    return value.strftime("%Y-%m-%d %H:%M")
+
+
+def duration_label(days: int | None) -> str:
+    if not days:
+        return "-"
+    if days % 30 == 0 and days < 365:
+        months = days // 30
+        return f"{months} month" if months == 1 else f"{months} months"
+    if days == 365:
+        return "12 months"
+    return f"{days} days"
+
+
 def html_escape(value: object | None) -> str:
     return escape("" if value is None else str(value), quote=False)
 

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.db.models import Order, OrderStatus, User, VPNService, VPNServiceStatus
+from app.db.models import Order, OrderStatus, PackageType, User, VPNService, VPNServiceStatus
 from app.db.repositories import active_service_for_user, get_discount_code, order_with_user_for_update
 from app.marzban.client import MarzbanClient
 from app.services.payment_service import PaymentService
@@ -40,6 +41,20 @@ def first_referral_bonus_allowed(user: User, completed_before: int) -> bool:
     )
 
 
+def timestamp_to_datetime(value: int | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromtimestamp(value, tz=timezone.utc)
+
+
+def expiry_after_days(current_expire_at: datetime | None, days: int) -> datetime:
+    base = current_expire_at or datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    if base < now:
+        base = now
+    return base + timedelta(days=days)
+
+
 class VPNProvisioningService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -62,13 +77,28 @@ class VPNProvisioningService:
                 if service:
                     remote_user = await marzban.get_user(service.marzban_username)
                     if remote_user:
-                        updated = await marzban.add_traffic_to_user(
-                            service.marzban_username, order.gb_amount
-                        )
                         username = service.marzban_username
+                        if order.package_type == PackageType.unlimited_time.value:
+                            expire_at = expiry_after_days(
+                                service.expire_at or timestamp_to_datetime(remote_user.expire),
+                                int(order.duration_days or 0),
+                            )
+                            updated = await marzban.set_unlimited_time_user(username, expire_at)
+                            service.package_type = PackageType.unlimited_time.value
+                            service.data_limit_gb = 0
+                            service.expire_at = expire_at
+                            service.remaining_traffic_gb = None
+                            order.expire_at = expire_at
+                        else:
+                            updated = await marzban.add_traffic_to_user(
+                                service.marzban_username, order.gb_amount
+                            )
+                            service.package_type = PackageType.traffic.value
+                            service.data_limit_gb += order.gb_amount
+                            service.expire_at = None
+                            order.expire_at = None
                         service.subscription_url = marzban.get_subscription_url(username, updated)
                         config_links = updated.links
-                        service.data_limit_gb += order.gb_amount
                         service.low_traffic_alert_sent = False
                         service.traffic_depleted_alert_sent = False
                         service.is_trial = False
@@ -78,22 +108,40 @@ class VPNProvisioningService:
                         service = None
                 if not service:
                     username = sanitize_username(f"tg_{order.user.telegram_id}_{order.id}")
-                    created = await create_vpn_account(marzban, username, order.gb_amount)
+                    expire_at = None
+                    if order.package_type == PackageType.unlimited_time.value:
+                        expire_at = expiry_after_days(None, int(order.duration_days or 0))
+                        created = await marzban.create_unlimited_time_user(username, expire_at)
+                    else:
+                        created = await create_vpn_account(marzban, username, order.gb_amount)
                     config_links = created.links
                     service = VPNService(
                         user_id=order.user_id,
                         marzban_username=username,
                         subscription_url=marzban.get_subscription_url(username, created),
-                        data_limit_gb=order.gb_amount,
+                        data_limit_gb=0
+                        if order.package_type == PackageType.unlimited_time.value
+                        else order.gb_amount,
+                        package_type=order.package_type,
                         status=VPNServiceStatus.active.value,
                         is_trial=False,
+                        expire_at=expire_at,
                     )
+                    order.expire_at = expire_at
                     session.add(service)
                     created_new = True
-                referral_result = await self._apply_referral_bonuses(session, marzban, order, service)
+                if order.package_type == PackageType.traffic.value:
+                    referral_result = await self._apply_referral_bonuses(session, marzban, order, service)
                 usage = await marzban.get_user_usage(service.marzban_username)
                 service.used_traffic_gb = bytes_to_gb(usage.used_traffic)
-                service.remaining_traffic_gb = bytes_to_gb(usage.remaining_traffic)
+                service.remaining_traffic_gb = (
+                    None
+                    if service.package_type == PackageType.unlimited_time.value
+                    else bytes_to_gb(usage.remaining_traffic)
+                )
+                if usage.expire:
+                    service.expire_at = timestamp_to_datetime(usage.expire)
+                    order.expire_at = service.expire_at
                 service.status = VPNServiceStatus.active.value
                 order.status = OrderStatus.completed.value
                 order.marzban_username = service.marzban_username
@@ -184,7 +232,13 @@ class VPNProvisioningService:
         async with MarzbanClient(self.settings) as marzban:
             usage = await marzban.get_user_usage(service.marzban_username)
             service.used_traffic_gb = bytes_to_gb(usage.used_traffic)
-            service.remaining_traffic_gb = bytes_to_gb(usage.remaining_traffic)
+            service.remaining_traffic_gb = (
+                None
+                if service.package_type == PackageType.unlimited_time.value
+                else bytes_to_gb(usage.remaining_traffic)
+            )
             if usage.data_limit is not None:
                 service.data_limit_gb = bytes_to_gb(usage.data_limit) or service.data_limit_gb
+            if usage.expire:
+                service.expire_at = timestamp_to_datetime(usage.expire)
         return service

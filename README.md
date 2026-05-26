@@ -1,6 +1,6 @@
 # Marzban Telegram VPN Bot
 
-A Dockerized bilingual Persian/English Telegram bot for selling V2Ray VPN traffic packages through Marzban. Users pay manually by card-to-card transfer, upload a receipt, and an admin approves the order inside Telegram. On approval, the bot creates or renews the Marzban user without expiry and sends the subscription link.
+A Dockerized bilingual Persian/English Telegram bot for selling V2Ray VPN traffic packages and unlimited time packages through Marzban. Users charge their wallet, buy a package, and the bot creates or renews the Marzban user and sends the subscription link.
 
 ## Features
 
@@ -10,7 +10,8 @@ A Dockerized bilingual Persian/English Telegram bot for selling V2Ray VPN traffi
 - Admin Telegram panel with pending orders, approvals, rejection, search, stats, broadcast, service actions
 - Marzban API client with login, token refresh, retry, create/update/delete/disable, usage, subscription URL
 - One active VPN service per Telegram user by default
-- Renewal adds traffic to the same Marzban user and keeps the same subscription link
+- Traffic renewal adds GB to the same Marzban user and keeps the same subscription link
+- Unlimited time packages use the same Marzban user with no traffic limit and an expiry date
 - Docker Compose with bot, PostgreSQL, Redis, healthchecks, and automatic migrations
 
 ## Create Telegram Bot
@@ -52,9 +53,13 @@ LTC_PRICE_API_URL=https://api.wallex.ir/v1/markets
 LTC_TOMAN_RATE=7000000
 CRYPTO_LTC_BONUS_PERCENT=0
 CRYPTO_LTC_BONUS_PERCENT=0
+PACKAGE_PRICES_TOMAN=1:220000,3:600000,5:900000,10:1600000
+UNLIMITED_TIME_PACKAGES_TOMAN=30:900000,90:2400000,180:4500000,365:8000000
 ```
 
 The default price is `220000` Toman per GB. Custom package limits are controlled by `MIN_CUSTOM_GB` and `MAX_CUSTOM_GB`.
+
+`UNLIMITED_TIME_PACKAGES_TOMAN` uses `days:price` items. For example, `30:900000` means unlimited traffic for 30 days at 900,000 Toman. Admins can edit this later from bot settings or the web admin settings page.
 
 `CARD_REFERENCE_REQUIRED=false` keeps card transfer visible to everyone. When enabled from `.env` or Admin Settings, new users must enter a valid reference code from an already-known user before the bot shows card details. LTC wallet top-up stays visible without a reference code.
 
@@ -140,7 +145,7 @@ docker compose run --rm bot alembic revision --autogenerate -m "change message"
 
 ## Admin Approval Flow
 
-1. User selects a package and uploads a receipt image.
+1. User selects a traffic package or an unlimited time package.
 2. The bot stores only Telegram `file_id`, not the actual receipt file.
 3. Order status becomes `pending_admin`.
 4. Admins from `ADMIN_TELEGRAM_IDS` receive the order and receipt.

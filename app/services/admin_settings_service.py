@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.services.payment_service import format_package_prices, parse_package_prices
+from app.services.payment_service import (
+    format_package_prices,
+    format_unlimited_time_packages,
+    parse_package_prices,
+    parse_unlimited_time_packages,
+)
 from app.utils.validators import parse_positive_int
 
 
@@ -52,4 +57,9 @@ def normalize_admin_setting_value(key: str, raw_value: str) -> str:
             return format_package_prices(parse_package_prices(value))
         except ValueError as exc:
             raise AdminSettingValidationError("invalid_package_prices") from exc
+    if key == "unlimited_time_packages_toman":
+        try:
+            return format_unlimited_time_packages(parse_unlimited_time_packages(value))
+        except ValueError as exc:
+            raise AdminSettingValidationError("invalid_unlimited_time_packages") from exc
     return value

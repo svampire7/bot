@@ -14,6 +14,11 @@ class OrderType(StrEnum):
     renewal = "renewal"
 
 
+class PackageType(StrEnum):
+    traffic = "traffic"
+    unlimited_time = "unlimited_time"
+
+
 class OrderStatus(StrEnum):
     pending_admin = "pending_admin"
     approved = "approved"
@@ -107,7 +112,9 @@ class Order(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     order_type: Mapped[str] = mapped_column(String(32))
+    package_type: Mapped[str] = mapped_column(String(32), default=PackageType.traffic.value, index=True)
     gb_amount: Mapped[int] = mapped_column(Integer)
+    duration_days: Mapped[int | None] = mapped_column(Integer)
     price_toman: Mapped[int] = mapped_column(Integer)
     original_price_toman: Mapped[int | None] = mapped_column(Integer)
     discount_code: Mapped[str | None] = mapped_column(String(64), index=True)
@@ -119,6 +126,7 @@ class Order(Base):
     receipt_file_id: Mapped[str | None] = mapped_column(String(512))
     admin_note: Mapped[str | None] = mapped_column(Text)
     marzban_username: Mapped[str | None] = mapped_column(String(128), index=True)
+    expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -135,6 +143,7 @@ class VPNService(Base):
     marzban_username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     subscription_url: Mapped[str | None] = mapped_column(Text)
     data_limit_gb: Mapped[float] = mapped_column(Float, default=0)
+    package_type: Mapped[str] = mapped_column(String(32), default=PackageType.traffic.value, index=True)
     used_traffic_gb: Mapped[float | None]
     remaining_traffic_gb: Mapped[float | None]
     status: Mapped[str] = mapped_column(String(32), default=VPNServiceStatus.active.value, index=True)
@@ -142,6 +151,7 @@ class VPNService(Base):
     traffic_depleted_alert_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     is_trial: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     trial_expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

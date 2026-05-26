@@ -272,6 +272,7 @@ def settings_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("change_min_gb"), callback_data="admin:set:min_custom_gb")
     builder.button(text=_("change_max_gb"), callback_data="admin:set:max_custom_gb")
     builder.button(text=_("change_packages"), callback_data="admin:set:package_prices_toman")
+    builder.button(text=_("change_unlimited_packages"), callback_data="admin:set:unlimited_time_packages_toman")
     builder.button(text=_("package_editor"), callback_data="admin:packages")
     builder.button(text=_("discount_codes"), callback_data="admin:discounts")
     builder.button(text=_("change_trial_enabled"), callback_data="admin:set:trial_enabled")

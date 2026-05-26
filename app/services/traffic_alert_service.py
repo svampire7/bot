@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.middlewares.i18n import I18n
 from app.config import Settings
-from app.db.models import User, VPNService, VPNServiceStatus
+from app.db.models import PackageType, User, VPNService, VPNServiceStatus
 from app.marzban.client import MarzbanClient
 from app.utils.formatters import bytes_to_gb, optional_gb
 
@@ -24,6 +24,8 @@ class TrafficAlertsDue:
 
 def traffic_alerts_due(service: VPNService) -> TrafficAlertsDue:
     total = float(service.data_limit_gb or 0)
+    if service.package_type == PackageType.unlimited_time.value:
+        return TrafficAlertsDue()
     remaining = service.remaining_traffic_gb
     if total <= 0 or remaining is None:
         return TrafficAlertsDue()
@@ -70,7 +72,11 @@ class TrafficAlertService:
                         continue
 
                     service.used_traffic_gb = bytes_to_gb(usage.used_traffic)
-                    service.remaining_traffic_gb = bytes_to_gb(usage.remaining_traffic)
+                    service.remaining_traffic_gb = (
+                        None
+                        if service.package_type == PackageType.unlimited_time.value
+                        else bytes_to_gb(usage.remaining_traffic)
+                    )
                     if usage.data_limit is not None:
                         service.data_limit_gb = bytes_to_gb(usage.data_limit) or service.data_limit_gb
 
