@@ -125,12 +125,6 @@ class AdminStates(StatesGroup):
     package_value = State()
     discount_value = State()
     qr_value = State()
-
-
-def admin_order_package_label(_, order: Order) -> str:
-    if order.package_type == PackageType.unlimited_time.value:
-        return _("unlimited_time_package_label", duration=duration_label(order.duration_days))
-    return _("traffic_package_label", gb=order.gb_amount)
     wallet_adjust_query = State()
     wallet_adjust_amount = State()
     wallet_adjust_note = State()
@@ -140,6 +134,12 @@ def admin_order_package_label(_, order: Order) -> str:
     bulk_plan = State()
     support_reply = State()
     reseller_add = State()
+
+
+def admin_order_package_label(_, order: Order) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return _("unlimited_time_package_label", duration=duration_label(order.duration_days))
+    return _("traffic_package_label", gb=order.gb_amount)
 
 
 def register_admin_filter(settings: Settings) -> None:
