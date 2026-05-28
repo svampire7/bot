@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
-
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -15,6 +13,7 @@ from app.bot.keyboards.user import (
     UnlimitedPackageCb,
     back_to_menu_keyboard,
     crypto_payment_keyboard,
+    gift_redeem_keyboard,
     main_menu,
     packages_keyboard,
     payment_keyboard,
@@ -25,8 +24,8 @@ from app.bot.keyboards.user import (
     wallet_purchase_keyboard,
 )
 from app.config import Settings
-from app.db.repositories import get_or_create_user, get_or_create_user_by_telegram_id, order_by_crypto_tx_hash
-from app.db.models import PackageType, User
+from app.db.models import OrderStatus, PackageType, User
+from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
 from app.services.crypto_service import (
     CryptoPaymentError,
     normalize_tx_hash,
@@ -35,6 +34,14 @@ from app.services.crypto_service import (
     verify_ltc_payment,
 )
 from app.services.discount_service import apply_discount
+from app.services.gift_service import (
+    GiftRedeemError,
+    GiftRedeemInvalid,
+    GiftRedeemNotReady,
+    GiftRedeemUsed,
+    generate_redeem_code,
+    redeem_gift_order,
+)
 from app.services.order_service import OrderService
 from app.services.payment_service import PaymentService
 from app.services.referral_service import notify_referrer_about_reward
@@ -49,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 class BuyStates(StatesGroup):
     custom_gb = State()
-    recipient_telegram_id = State()
+    redeem_code = State()
     payment_method = State()
     receipt = State()
     crypto_tx = State()
@@ -66,7 +73,7 @@ async def show_payment(
     package_price: int | None = None,
     package_type: str = PackageType.traffic.value,
     duration_days: int | None = None,
-    recipient_telegram_id: int | None = None,
+    gift_mode: bool = False,
 ):
     payment = PaymentService(settings)
     assert callback.from_user
@@ -84,12 +91,6 @@ async def show_payment(
         if package_type == PackageType.traffic.value and (gb < min_gb or gb > max_gb):
             await callback.message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))  # type: ignore[union-attr]
             return
-        recipient_telegram_id = recipient_telegram_id or callback.from_user.id
-        recipient_user = await get_or_create_user_by_telegram_id(
-            session,
-            recipient_telegram_id,
-            settings.default_language,
-        )
         price = package_price if package_price is not None else gb * price_per_gb
         balance = await WalletService().balance(session, user.id)
         await state.update_data(
@@ -101,16 +102,17 @@ async def show_payment(
             package_type=package_type,
             duration_days=duration_days,
             buyer_user_id=user.id,
-            recipient_user_id=recipient_user.id,
-            recipient_telegram_id=recipient_user.telegram_id,
-            buying_for_other=recipient_user.telegram_id != user.telegram_id,
+            recipient_user_id=user.id,
+            recipient_telegram_id=user.telegram_id,
+            buying_for_other=gift_mode,
+            gift_mode=gift_mode,
         )
         await session.commit()
     await state.set_state(BuyStates.payment_method)
     await callback.message.edit_text(  # type: ignore[union-attr]
         _("wallet_purchase_prompt",
           package=order_package_label(_, package_type, gb, duration_days),
-          recipient=recipient_label(_, recipient_telegram_id, recipient_telegram_id != callback.from_user.id),
+          recipient=recipient_label(_, user.telegram_id, gift_mode),
           gb=gb,
           price=toman(price),
           balance=toman(balance)),
@@ -127,15 +129,15 @@ def order_package_label(_, package_type: str, gb: int, duration_days: int | None
 
 def recipient_label(_, telegram_id: int, buying_for_other: bool) -> str:
     if buying_for_other:
-        return _("recipient_other_label", telegram_id=telegram_id)
+        return _("recipient_redeem_label")
     return _("recipient_self_label")
 
 
-async def gift_claim_link(bot, token: str | None) -> str | None:
-    if not token:
+async def gift_claim_link(bot, code: str | None) -> str | None:
+    if not code:
         return None
     me = await bot.get_me()
-    return f"https://t.me/{me.username}?start=gift_{token}"
+    return f"https://t.me/{me.username}?start=gift_{code}"
 
 
 async def ask_purchase_target(
@@ -260,36 +262,24 @@ async def purchase_for_self(
         int(data["price"]),
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
-        recipient_telegram_id=callback.from_user.id,
+        gift_mode=False,
     )
 
 
 @router.callback_query(F.data == "target:other")
-async def ask_recipient_telegram_id(callback: CallbackQuery, state: FSMContext, _) -> None:
-    data = await state.get_data()
-    if "price" not in data or "gb" not in data:
-        await callback.answer(_("package_not_available"), show_alert=True)
-        return
-    await state.set_state(BuyStates.recipient_telegram_id)
-    await callback.message.edit_text(_("enter_recipient_telegram_id"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
-    await callback.answer()
-
-
-@router.message(BuyStates.recipient_telegram_id)
-async def recipient_telegram_id_entered(
-    message: Message,
+async def purchase_for_other(
+    callback: CallbackQuery,
     state: FSMContext,
     sessionmaker: async_sessionmaker,
     settings: Settings,
     _,
 ) -> None:
-    telegram_id = parse_positive_int(message.text or "")
-    if not telegram_id:
-        await message.answer(_("invalid_recipient_telegram_id"), reply_markup=back_to_menu_keyboard(_))
-        return
     data = await state.get_data()
-    await show_payment_from_message(
-        message,
+    if "price" not in data or "gb" not in data:
+        await callback.answer(_("package_not_available"), show_alert=True)
+        return
+    await show_payment(
+        callback,
         state,
         int(data["gb"]),
         sessionmaker,
@@ -298,66 +288,7 @@ async def recipient_telegram_id_entered(
         int(data["price"]),
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
-        recipient_telegram_id=telegram_id,
-    )
-
-
-async def show_payment_from_message(
-    message: Message,
-    state: FSMContext,
-    gb: int,
-    sessionmaker,
-    settings,
-    _,
-    package_price: int,
-    package_type: str,
-    duration_days: int | None,
-    recipient_telegram_id: int,
-) -> None:
-    assert message.from_user
-    payment = PaymentService(settings)
-    async with sessionmaker() as session:
-        user = await get_or_create_user(
-            session,
-            message.from_user.id,
-            message.from_user.username,
-            message.from_user.first_name,
-            settings.default_language,
-        )
-        min_gb = await payment.min_custom_gb(session)
-        max_gb = await payment.max_custom_gb(session)
-        if package_type == PackageType.traffic.value and (gb < min_gb or gb > max_gb):
-            await message.answer(_("invalid_gb", min_gb=min_gb, max_gb=max_gb))
-            return
-        recipient_user = await get_or_create_user_by_telegram_id(
-            session,
-            recipient_telegram_id,
-            settings.default_language,
-        )
-        balance = await WalletService().balance(session, user.id)
-        await state.update_data(
-            gb=gb,
-            price=package_price,
-            original_price=package_price,
-            discount_code=None,
-            discount_amount=0,
-            package_type=package_type,
-            duration_days=duration_days,
-            buyer_user_id=user.id,
-            recipient_user_id=recipient_user.id,
-            recipient_telegram_id=recipient_user.telegram_id,
-            buying_for_other=recipient_user.telegram_id != user.telegram_id,
-        )
-        await session.commit()
-    await state.set_state(BuyStates.payment_method)
-    await message.answer(
-        _("wallet_purchase_prompt",
-          package=order_package_label(_, package_type, gb, duration_days),
-          recipient=recipient_label(_, recipient_telegram_id, recipient_telegram_id != message.from_user.id),
-          gb=gb,
-          price=toman(package_price),
-          balance=toman(balance)),
-        reply_markup=wallet_purchase_keyboard(_),
+        gift_mode=True,
     )
 
 
@@ -429,13 +360,9 @@ async def wallet_payment_selected(
                 callback.from_user.first_name,
                 settings.default_language,
             )
-            recipient_user_id = int(data.get("recipient_user_id") or buyer.id)
-            recipient = await session.get(User, recipient_user_id)
-            if recipient is None:
-                recipient = buyer
             final_price = int(data["price"])
-            buying_for_other = recipient.telegram_id != buyer.telegram_id
-            gift_token = secrets.token_urlsafe(16) if buying_for_other else None
+            gift_mode = bool(data.get("gift_mode") or data.get("buying_for_other"))
+            gift_code = await generate_redeem_code(session) if gift_mode else None
             balance = await WalletService().balance(session, buyer.id)
             if balance < final_price:
                 await callback.answer(
@@ -449,7 +376,7 @@ async def wallet_payment_selected(
                 return
             order = await OrderService(settings).create_order(
                 session,
-                recipient.id,
+                buyer.id,
                 int(data["gb"]),
                 final_price,
                 None,
@@ -460,10 +387,39 @@ async def wallet_payment_selected(
                 package_type=str(data.get("package_type") or PackageType.traffic.value),
                 duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
                 purchased_by_user_id=buyer.id,
-                gift_delivery_token=gift_token,
+                gift_delivery_token=gift_code,
             )
+            if gift_mode:
+                order.status = OrderStatus.approved.value
             order_id = order.id
             await WalletService().spend(session, buyer.id, final_price, order.id)
+            claim_token = order.gift_delivery_token
+            buyer_language = buyer.language
+    except InsufficientWalletBalance:
+        await callback.answer(_("insufficient_wallet_balance"), show_alert=True)
+        return
+    except Exception as exc:
+        logger.exception("Wallet purchase failed", extra={"order_id": order_id})
+        await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
+        return
+    if bool(data.get("gift_mode") or data.get("buying_for_other")):
+        claim_link = await gift_claim_link(bot, claim_token)
+        await state.clear()
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            _("gift_purchase_created", code=html_code(claim_token or "-"), claim_link=html_code(claim_link or "-")),
+            reply_markup=gift_redeem_keyboard(_, claim_token or "-", claim_link),
+        )
+        await callback.answer()
+        return
+
+    try:
+        async with sessionmaker.begin() as session:
+            from app.db.models import Order
+
+            order = await session.get(Order, order_id)
+            buyer = await session.get(User, int(data.get("buyer_user_id") or 0)) if data.get("buyer_user_id") else None
+            if not order or not buyer:
+                raise ValueError("Order not found")
             try:
                 service, _created, config_links, referral_reward = await VPNProvisioningService(settings).approve_order(
                     session, order.id
@@ -480,15 +436,10 @@ async def wallet_payment_selected(
                 text = ""
                 subscription_url = None
             else:
-                text = service_ready_text(i18n.t, recipient.language, order, service, config_links)
+                text = service_ready_text(i18n.t, buyer.language, order, service, config_links)
                 subscription_url = service.subscription_url
-                recipient_telegram_id = recipient.telegram_id
-                recipient_language = recipient.language
+                recipient_telegram_id = buyer.telegram_id
                 buyer_telegram_id = buyer.telegram_id
-                claim_token = order.gift_delivery_token
-    except InsufficientWalletBalance:
-        await callback.answer(_("insufficient_wallet_balance"), show_alert=True)
-        return
     except Exception as exc:
         logger.exception("Wallet purchase failed", extra={"order_id": order_id})
         await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
@@ -522,6 +473,60 @@ async def wallet_payment_selected(
     )
     await notify_referrer_about_reward(bot, i18n, referral_reward)
     await callback.answer()
+
+
+@router.callback_query(F.data == "menu:redeem")
+async def ask_redeem_code(callback: CallbackQuery, state: FSMContext, _) -> None:
+    await state.set_state(BuyStates.redeem_code)
+    await callback.message.edit_text(_("redeem_code_prompt"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.message(BuyStates.redeem_code)
+async def redeem_code_entered(
+    message: Message,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    bot,
+    i18n,
+    _,
+) -> None:
+    assert message.from_user
+    try:
+        async with sessionmaker.begin() as session:
+            user = await get_or_create_user(
+                session,
+                message.from_user.id,
+                message.from_user.username,
+                message.from_user.first_name,
+                settings.default_language,
+            )
+            result = await redeem_gift_order(session, settings, user, message.text or "")
+            text = service_ready_text(i18n.t, user.language, result.order, result.service, result.config_links)
+    except GiftRedeemInvalid:
+        await message.answer(_("redeem_code_invalid"), reply_markup=back_to_menu_keyboard(_))
+        return
+    except GiftRedeemUsed:
+        await message.answer(_("redeem_code_used"), reply_markup=back_to_menu_keyboard(_))
+        return
+    except GiftRedeemNotReady as exc:
+        await message.answer(_("gift_claim_not_ready", status=_("status_" + exc.status)), reply_markup=back_to_menu_keyboard(_))
+        return
+    except GiftRedeemError as exc:
+        await message.answer(_("redeem_code_failed", error=html_escape(str(exc))), reply_markup=back_to_menu_keyboard(_))
+        return
+    except Exception as exc:
+        logger.exception("Gift redeem failed", extra={"telegram_id": message.from_user.id})
+        await message.answer(_("redeem_code_failed", error=html_escape(str(exc))), reply_markup=back_to_menu_keyboard(_))
+        return
+    await state.clear()
+    if result.referral_reward.referred_bonus_gb:
+        text += "\n\n" + _("referral_friend_bonus_applied", bonus_gb=result.referral_reward.referred_bonus_gb)
+    if result.referral_reward.pending_bonus_gb:
+        text += "\n" + _("referral_pending_bonus_applied", bonus_gb=result.referral_reward.pending_bonus_gb)
+    await message.answer(text, reply_markup=service_copy_keyboard(_, result.service.subscription_url))
+    await notify_referrer_about_reward(bot, i18n, result.referral_reward)
 
 
 def service_ready_text(t, language: str, order, service, config_links: list[str]) -> str:

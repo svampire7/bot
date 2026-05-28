@@ -7,26 +7,26 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.keyboards.user import invite_keyboard, language_keyboard, main_menu
-from app.bot.handlers.services import service_info_text
+from app.bot.handlers.buy import service_ready_text
+from app.bot.keyboards.user import invite_keyboard, language_keyboard, main_menu, service_copy_keyboard
 from app.config import Settings
-from app.db.models import OrderStatus
 from app.db.repositories import (
-    active_service_for_user,
     ensure_card_reference_code,
     get_or_create_user,
-    order_by_gift_delivery_token,
     referral_stats,
     set_referrer_if_allowed,
 )
+from app.services.gift_service import GiftRedeemInvalid, GiftRedeemNotReady, GiftRedeemUsed, redeem_gift_order
 from app.services.payment_service import PaymentService
+from app.services.referral_service import notify_referrer_about_reward
+from app.utils.formatters import html_escape
 
 router = Router()
 
 
 @router.message(CommandStart())
 async def start(
-    message: Message, command: CommandObject, sessionmaker: async_sessionmaker, settings: Settings, _
+    message: Message, command: CommandObject, sessionmaker: async_sessionmaker, settings: Settings, bot, i18n, _
 ) -> None:
     assert message.from_user
     payload = (command.args or "").strip()
@@ -41,28 +41,27 @@ async def start(
         if payload.startswith("ref_") and payload[4:].isdigit():
             await set_referrer_if_allowed(session, user, int(payload[4:]))
         if payload.startswith("gift_"):
-            token = payload[5:].strip()
-            order = await order_by_gift_delivery_token(session, token)
-            if not order or order.user.telegram_id != user.telegram_id:
-                await session.commit()
-                await message.answer(_("gift_claim_invalid"), reply_markup=main_menu(_))
-                return
-            if order.status != OrderStatus.completed.value:
+            try:
+                result = await redeem_gift_order(session, settings, user, payload[5:])
+                text = service_ready_text(i18n.t, user.language, result.order, result.service, result.config_links)
                 await session.commit()
                 await message.answer(
-                    _("gift_claim_not_ready", status=_("status_" + order.status)),
-                    reply_markup=main_menu(_),
+                    _("gift_claim_ready") + "\n\n" + text,
+                    reply_markup=service_copy_keyboard(_, result.service.subscription_url),
                 )
-                return
-            service = await active_service_for_user(session, user.id)
-            await session.commit()
-            if not service:
-                await message.answer(_("no_service"), reply_markup=main_menu(_))
-                return
-            await message.answer(
-                _("gift_claim_ready") + "\n\n" + service_info_text(_, service),
-                reply_markup=main_menu(_),
-            )
+                await notify_referrer_about_reward(bot, i18n, result.referral_reward)
+            except GiftRedeemInvalid:
+                await session.commit()
+                await message.answer(_("redeem_code_invalid"), reply_markup=main_menu(_))
+            except GiftRedeemUsed:
+                await session.commit()
+                await message.answer(_("redeem_code_used"), reply_markup=main_menu(_))
+            except GiftRedeemNotReady as exc:
+                await session.commit()
+                await message.answer(_("gift_claim_not_ready", status=_("status_" + exc.status)), reply_markup=main_menu(_))
+            except Exception as exc:
+                await session.rollback()
+                await message.answer(_("redeem_code_failed", error=html_escape(str(exc))), reply_markup=main_menu(_))
             return
         await session.commit()
     await message.answer(_("start"), reply_markup=language_keyboard())

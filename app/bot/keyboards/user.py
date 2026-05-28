@@ -40,6 +40,7 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("free_trial"), callback_data="menu:trial")
     builder.button(text=_("my_service"), callback_data="menu:service")
     builder.button(text=_("wallet"), callback_data="menu:wallet")
+    builder.button(text=_("redeem_code"), callback_data="menu:redeem")
     builder.button(text=_("my_orders"), callback_data="menu:orders")
     builder.button(text=_("renew"), callback_data="menu:renew")
     builder.button(text=_("support"), callback_data="menu:support")
@@ -47,7 +48,7 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("reseller_panel"), callback_data="menu:reseller")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2, 2, 2)
+    builder.adjust(2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -56,6 +57,16 @@ def purchase_target_keyboard(_) -> InlineKeyboardMarkup:
     builder.button(text=_("buy_for_me"), callback_data="target:self")
     builder.button(text=_("buy_for_other"), callback_data="target:other")
     builder.button(text=_("back"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def gift_redeem_keyboard(_, code: str, link: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("copy_redeem_code"), copy_text=CopyTextButton(text=code))
+    if link:
+        builder.button(text=_("copy_redeem_link"), copy_text=CopyTextButton(text=link))
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()
 

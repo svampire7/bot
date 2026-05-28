@@ -214,6 +214,15 @@ async def order_by_gift_delivery_token(session: AsyncSession, token: str) -> Ord
     )
 
 
+async def order_by_gift_delivery_token_for_update(session: AsyncSession, token: str) -> Order | None:
+    return await session.scalar(
+        select(Order)
+        .options(selectinload(Order.user))
+        .where(Order.gift_delivery_token == token)
+        .with_for_update()
+    )
+
+
 async def wallet_transaction_by_crypto_tx_hash(session: AsyncSession, tx_hash: str) -> WalletTransaction | None:
     return await session.scalar(select(WalletTransaction).where(WalletTransaction.crypto_tx_hash == tx_hash))
 

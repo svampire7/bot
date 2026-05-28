@@ -146,13 +146,14 @@ docker compose run --rm bot alembic revision --autogenerate -m "change message"
 ## Admin Approval Flow
 
 1. User selects a traffic package or an unlimited time package.
-2. User chooses whether the service is for themselves or another Telegram user.
-3. For another user, the bot asks for the recipient's numeric Telegram ID, creates that Telegram ID as a customer record, and provisions the VPN service on that recipient account.
-4. The buyer pays from their own wallet. The recipient receives the subscription/config message directly if they have already started the bot; otherwise the buyer sees the service data and a delivery warning.
-5. If a manual receipt flow is enabled later, the bot stores only Telegram `file_id`, not the actual receipt file.
-6. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
-7. If Marzban succeeds, order becomes `completed` and the recipient receives service data.
-8. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
+2. User chooses whether the service is for themselves or another person.
+3. For another person, the buyer pays from their own wallet and receives a redeem code plus a direct redeem link.
+4. The real customer starts the bot and enters the redeem code from `Redeem Gift Code`, or opens the direct redeem link.
+5. The bot creates that Telegram account as a customer and provisions the service on the redeemer's account.
+6. If a manual receipt flow is enabled later, the bot stores only Telegram `file_id`, not the actual receipt file.
+7. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
+8. If Marzban succeeds, order becomes `completed` and the recipient receives service data.
+9. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
 
 ## Card Reference Gate
 
@@ -236,7 +237,8 @@ Persian:
 4. انتخاب `20GB`
 5. انتخاب `برای خودم` یا `برای شخص دیگر`
 6. پرداخت از کیف پول
-7. دریافت لینک اشتراک و کانفیگ‌ها
+7. برای خرید خودتان: دریافت لینک اشتراک و کانفیگ‌ها
+8. برای شخص دیگر: دریافت کد فعال‌سازی و ارسال آن به مشتری
 
 English:
 
@@ -246,7 +248,8 @@ English:
 4. Choose `20GB`
 5. Choose `For me` or `For someone else`
 6. Pay from wallet
-7. Receive subscription link and configs
+7. For your own purchase: receive subscription link and configs
+8. For someone else: receive a redeem code and send it to the customer
 
 ## Admin Panel
 
