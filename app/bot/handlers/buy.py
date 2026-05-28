@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -128,6 +129,13 @@ def recipient_label(_, telegram_id: int, buying_for_other: bool) -> str:
     if buying_for_other:
         return _("recipient_other_label", telegram_id=telegram_id)
     return _("recipient_self_label")
+
+
+async def gift_claim_link(bot, token: str | None) -> str | None:
+    if not token:
+        return None
+    me = await bot.get_me()
+    return f"https://t.me/{me.username}?start=gift_{token}"
 
 
 async def ask_purchase_target(
@@ -426,6 +434,8 @@ async def wallet_payment_selected(
             if recipient is None:
                 recipient = buyer
             final_price = int(data["price"])
+            buying_for_other = recipient.telegram_id != buyer.telegram_id
+            gift_token = secrets.token_urlsafe(16) if buying_for_other else None
             balance = await WalletService().balance(session, buyer.id)
             if balance < final_price:
                 await callback.answer(
@@ -450,6 +460,7 @@ async def wallet_payment_selected(
                 package_type=str(data.get("package_type") or PackageType.traffic.value),
                 duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
                 purchased_by_user_id=buyer.id,
+                gift_delivery_token=gift_token,
             )
             order_id = order.id
             await WalletService().spend(session, buyer.id, final_price, order.id)
@@ -474,6 +485,7 @@ async def wallet_payment_selected(
                 recipient_telegram_id = recipient.telegram_id
                 recipient_language = recipient.language
                 buyer_telegram_id = buyer.telegram_id
+                claim_token = order.gift_delivery_token
     except InsufficientWalletBalance:
         await callback.answer(_("insufficient_wallet_balance"), show_alert=True)
         return
@@ -492,6 +504,7 @@ async def wallet_payment_selected(
     await state.clear()
     delivery_note = ""
     if recipient_telegram_id != buyer_telegram_id:
+        claim_link = await gift_claim_link(bot, claim_token)
         try:
             await bot.send_message(
                 recipient_telegram_id,
@@ -500,9 +513,9 @@ async def wallet_payment_selected(
             )
         except Exception:
             logger.exception("Failed to deliver gifted service", extra={"order_id": order_id, "recipient": recipient_telegram_id})
-            delivery_note = "\n\n" + _("gift_delivery_failed", telegram_id=recipient_telegram_id)
+            delivery_note = "\n\n" + _("gift_delivery_failed", telegram_id=recipient_telegram_id, claim_link=html_code(claim_link or "-"))
         else:
-            delivery_note = "\n\n" + _("gift_delivered", telegram_id=recipient_telegram_id)
+            delivery_note = "\n\n" + _("gift_delivered", telegram_id=recipient_telegram_id, claim_link=html_code(claim_link or "-"))
     await callback.message.edit_text(  # type: ignore[union-attr]
         text + delivery_note,
         reply_markup=service_copy_keyboard(_, subscription_url),

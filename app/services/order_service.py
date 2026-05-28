@@ -27,6 +27,7 @@ class OrderService:
         package_type: str = PackageType.traffic.value,
         duration_days: int | None = None,
         purchased_by_user_id: int | None = None,
+        gift_delivery_token: str | None = None,
     ) -> Order:
         active_service = await active_service_for_user(session, user_id)
         order = Order(
@@ -36,6 +37,7 @@ class OrderService:
             package_type=package_type,
             gb_amount=gb_amount,
             duration_days=duration_days,
+            gift_delivery_token=gift_delivery_token,
             price_toman=price_toman,
             original_price_toman=original_price_toman,
             discount_code=discount_code,

@@ -127,6 +127,7 @@ class Order(Base):
     receipt_file_id: Mapped[str | None] = mapped_column(String(512))
     admin_note: Mapped[str | None] = mapped_column(Text)
     marzban_username: Mapped[str | None] = mapped_column(String(128), index=True)
+    gift_delivery_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     expire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

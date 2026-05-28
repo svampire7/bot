@@ -8,8 +8,17 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.user import invite_keyboard, language_keyboard, main_menu
+from app.bot.handlers.services import service_info_text
 from app.config import Settings
-from app.db.repositories import ensure_card_reference_code, get_or_create_user, referral_stats, set_referrer_if_allowed
+from app.db.models import OrderStatus
+from app.db.repositories import (
+    active_service_for_user,
+    ensure_card_reference_code,
+    get_or_create_user,
+    order_by_gift_delivery_token,
+    referral_stats,
+    set_referrer_if_allowed,
+)
 from app.services.payment_service import PaymentService
 
 router = Router()
@@ -31,6 +40,30 @@ async def start(
         )
         if payload.startswith("ref_") and payload[4:].isdigit():
             await set_referrer_if_allowed(session, user, int(payload[4:]))
+        if payload.startswith("gift_"):
+            token = payload[5:].strip()
+            order = await order_by_gift_delivery_token(session, token)
+            if not order or order.user.telegram_id != user.telegram_id:
+                await session.commit()
+                await message.answer(_("gift_claim_invalid"), reply_markup=main_menu(_))
+                return
+            if order.status != OrderStatus.completed.value:
+                await session.commit()
+                await message.answer(
+                    _("gift_claim_not_ready", status=_("status_" + order.status)),
+                    reply_markup=main_menu(_),
+                )
+                return
+            service = await active_service_for_user(session, user.id)
+            await session.commit()
+            if not service:
+                await message.answer(_("no_service"), reply_markup=main_menu(_))
+                return
+            await message.answer(
+                _("gift_claim_ready") + "\n\n" + service_info_text(_, service),
+                reply_markup=main_menu(_),
+            )
+            return
         await session.commit()
     await message.answer(_("start"), reply_markup=language_keyboard())
 
