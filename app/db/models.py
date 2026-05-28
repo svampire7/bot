@@ -99,7 +99,7 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    orders: Mapped[list[Order]] = relationship(back_populates="user")
+    orders: Mapped[list[Order]] = relationship(back_populates="user", foreign_keys="Order.user_id")
     vpn_services: Mapped[list[VPNService]] = relationship(back_populates="user")
     support_tickets: Mapped[list[SupportTicket]] = relationship(back_populates="user")
     wallet_transactions: Mapped[list[WalletTransaction]] = relationship(back_populates="user")
@@ -111,6 +111,7 @@ class Order(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    purchased_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     order_type: Mapped[str] = mapped_column(String(32))
     package_type: Mapped[str] = mapped_column(String(32), default=PackageType.traffic.value, index=True)
     gb_amount: Mapped[int] = mapped_column(Integer)
@@ -132,7 +133,8 @@ class Order(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped[User] = relationship(back_populates="orders")
+    user: Mapped[User] = relationship(back_populates="orders", foreign_keys=[user_id])
+    purchased_by: Mapped[User | None] = relationship(foreign_keys=[purchased_by_user_id])
 
 
 class VPNService(Base):

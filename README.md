@@ -146,12 +146,12 @@ docker compose run --rm bot alembic revision --autogenerate -m "change message"
 ## Admin Approval Flow
 
 1. User selects a traffic package or an unlimited time package.
-2. The bot stores only Telegram `file_id`, not the actual receipt file.
-3. Order status becomes `pending_admin`.
-4. Admins from `ADMIN_TELEGRAM_IDS` receive the order and receipt.
-5. Admin can approve, reject, ask for a new receipt, or view the user.
+2. User chooses whether the service is for themselves or another Telegram user.
+3. For another user, the bot asks for the recipient's numeric Telegram ID, creates that Telegram ID as a customer record, and provisions the VPN service on that recipient account.
+4. The buyer pays from their own wallet. The recipient receives the subscription/config message directly if they have already started the bot; otherwise the buyer sees the service data and a delivery warning.
+5. If a manual receipt flow is enabled later, the bot stores only Telegram `file_id`, not the actual receipt file.
 6. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
-7. If Marzban succeeds, order becomes `completed` and the user receives service data.
+7. If Marzban succeeds, order becomes `completed` and the recipient receives service data.
 8. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
 
 ## Card Reference Gate
@@ -232,21 +232,21 @@ Persian:
 
 1. `/start`
 2. انتخاب `فارسی`
-3. `خرید VPN`
+3. `خرید نامحدود` یا `خرید حجمی`
 4. انتخاب `20GB`
-5. کارت به کارت مبلغ
-6. ارسال تصویر رسید
-7. دریافت لینک اشتراک پس از تایید ادمین
+5. انتخاب `برای خودم` یا `برای شخص دیگر`
+6. پرداخت از کیف پول
+7. دریافت لینک اشتراک و کانفیگ‌ها
 
 English:
 
 1. `/start`
 2. Choose `English`
-3. `Buy VPN`
+3. `Monthly Unlimited` or `Buy by Traffic`
 4. Choose `20GB`
-5. Transfer the amount manually
-6. Upload receipt image
-7. Receive subscription link after admin approval
+5. Choose `For me` or `For someone else`
+6. Pay from wallet
+7. Receive subscription link and configs
 
 ## Admin Panel
 

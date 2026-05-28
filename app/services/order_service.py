@@ -26,10 +26,12 @@ class OrderService:
         crypto_expected_usdt: str | None = None,
         package_type: str = PackageType.traffic.value,
         duration_days: int | None = None,
+        purchased_by_user_id: int | None = None,
     ) -> Order:
         active_service = await active_service_for_user(session, user_id)
         order = Order(
             user_id=user_id,
+            purchased_by_user_id=purchased_by_user_id,
             order_type=OrderType.renewal.value if active_service else OrderType.new.value,
             package_type=package_type,
             gb_amount=gb_amount,

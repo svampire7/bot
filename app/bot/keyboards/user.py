@@ -35,9 +35,9 @@ def language_keyboard() -> InlineKeyboardMarkup:
 
 def main_menu(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text=_("free_trial"), callback_data="menu:trial")
-    builder.button(text=_("buy_vpn"), callback_data="menu:buy")
     builder.button(text=_("buy_unlimited_time"), callback_data="menu:buy_unlimited")
+    builder.button(text=_("buy_vpn"), callback_data="menu:buy")
+    builder.button(text=_("free_trial"), callback_data="menu:trial")
     builder.button(text=_("my_service"), callback_data="menu:service")
     builder.button(text=_("wallet"), callback_data="menu:wallet")
     builder.button(text=_("my_orders"), callback_data="menu:orders")
@@ -47,7 +47,16 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("reseller_panel"), callback_data="menu:reseller")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2, 2, 2)
+    return builder.as_markup()
+
+
+def purchase_target_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("buy_for_me"), callback_data="target:self")
+    builder.button(text=_("buy_for_other"), callback_data="target:other")
+    builder.button(text=_("back"), callback_data="menu:main")
+    builder.adjust(1)
     return builder.as_markup()
 
 

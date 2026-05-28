@@ -72,6 +72,27 @@ async def get_user_by_telegram_id(session: AsyncSession, telegram_id: int) -> Us
     return await session.scalar(select(User).where(User.telegram_id == telegram_id))
 
 
+async def get_or_create_user_by_telegram_id(
+    session: AsyncSession,
+    telegram_id: int,
+    default_language: str,
+) -> User:
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user:
+        await ensure_card_reference_code(session, user)
+        return user
+    user = User(
+        telegram_id=telegram_id,
+        telegram_username=None,
+        first_name=None,
+        language=default_language,
+        card_reference_code=await _generate_card_reference_code(session),
+    )
+    session.add(user)
+    await session.flush()
+    return user
+
+
 async def user_count(session: AsyncSession) -> int:
     return int(await session.scalar(select(func.count(User.id))) or 0)
 
@@ -164,13 +185,21 @@ async def order_with_user_for_update(session: AsyncSession, order_id: int) -> Or
 
 async def user_order_history(session: AsyncSession, user_id: int, limit: int = 10) -> list[Order]:
     result = await session.scalars(
-        select(Order).where(Order.user_id == user_id).order_by(Order.id.desc()).limit(limit)
+        select(Order)
+        .where(or_(Order.user_id == user_id, Order.purchased_by_user_id == user_id))
+        .order_by(Order.id.desc())
+        .limit(limit)
     )
     return list(result)
 
 
 async def order_for_user(session: AsyncSession, user_id: int, order_id: int) -> Order | None:
-    return await session.scalar(select(Order).where(Order.id == order_id, Order.user_id == user_id))
+    return await session.scalar(
+        select(Order).where(
+            Order.id == order_id,
+            or_(Order.user_id == user_id, Order.purchased_by_user_id == user_id),
+        )
+    )
 
 
 async def order_by_crypto_tx_hash(session: AsyncSession, tx_hash: str) -> Order | None:

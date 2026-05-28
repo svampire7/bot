@@ -108,7 +108,7 @@ from app.services.referral_service import notify_referrer_about_reward
 from app.services.reseller_service import add_reseller, list_resellers, set_reseller_active
 from app.services.wallet_service import WalletService
 from app.services.vpn_service import DuplicateApprovalError, VPNProvisioningService
-from app.utils.formatters import duration_label, html_code, html_code_lines, optional_gb, toman
+from app.utils.formatters import duration_label, html_code, html_code_lines, optional_datetime, optional_gb, toman
 from app.utils.validators import parse_positive_int, parse_toman_amount, sanitize_username
 
 router = Router()
@@ -803,18 +803,31 @@ async def admin_order_action(
                 await log_admin_action(session, callback.from_user.id, "approve_order", order_id)
                 user = await session.get(User, order.user_id)
                 assert user is not None
-                text = i18n.t(
-                    "service_ready",
-                    user.language,
-                    purchased_gb=order.gb_amount,
-                    total_gb=optional_gb(service.data_limit_gb),
-                    used=optional_gb(service.used_traffic_gb),
-                    remaining=optional_gb(service.remaining_traffic_gb),
-                    subscription_url=html_code(service.subscription_url or "-"),
-                    config_links=html_code_lines(config_links) if config_links else i18n.t(
-                        "configs_not_available", user.language
-                    ),
-                )
+                if order.package_type == PackageType.unlimited_time.value:
+                    text = i18n.t(
+                        "service_ready_unlimited",
+                        user.language,
+                        duration=duration_label(order.duration_days),
+                        expire_at=optional_datetime(service.expire_at or order.expire_at),
+                        used=optional_gb(service.used_traffic_gb),
+                        subscription_url=html_code(service.subscription_url or "-"),
+                        config_links=html_code_lines(config_links) if config_links else i18n.t(
+                            "configs_not_available", user.language
+                        ),
+                    )
+                else:
+                    text = i18n.t(
+                        "service_ready",
+                        user.language,
+                        purchased_gb=order.gb_amount,
+                        total_gb=optional_gb(service.data_limit_gb),
+                        used=optional_gb(service.used_traffic_gb),
+                        remaining=optional_gb(service.remaining_traffic_gb),
+                        subscription_url=html_code(service.subscription_url or "-"),
+                        config_links=html_code_lines(config_links) if config_links else i18n.t(
+                            "configs_not_available", user.language
+                        ),
+                    )
                 if referral_reward.referred_bonus_gb:
                     text += "\n\n" + i18n.t(
                         "referral_friend_bonus_applied",
