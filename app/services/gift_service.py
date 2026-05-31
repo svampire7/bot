@@ -8,10 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.db.models import Order, OrderStatus, OrderType, User
+from app.db.models import BulkAccount, BulkBatch, BulkBatchStatus, Order, OrderStatus, OrderType, PackageType, User, VPNServiceStatus
 from app.db.repositories import active_service_for_user, order_by_gift_delivery_token_for_update
+from app.marzban.client import MarzbanClient
 from app.services.vpn_service import ReferralRewardResult, VPNProvisioningService
 from app.services.wallet_service import WalletService
+from app.utils.validators import sanitize_username
 
 
 class GiftRedeemError(RuntimeError):
@@ -38,6 +40,13 @@ class GiftRedeemResult:
     service: object
     config_links: list[str]
     referral_reward: ReferralRewardResult
+
+
+@dataclass(frozen=True)
+class DirectGiftAccountResult:
+    username: str
+    subscription_url: str | None
+    config_links: list[str]
 
 
 def normalize_redeem_code(value: str) -> str:
@@ -99,3 +108,46 @@ async def redeem_gift_order(
             )
         raise
     return GiftRedeemResult(order, service, config_links, referral_reward)
+
+
+async def create_direct_gift_account(
+    session: AsyncSession,
+    settings: Settings,
+    buyer: User,
+    order: Order,
+) -> DirectGiftAccountResult:
+    username = sanitize_username(f"gift_{buyer.telegram_id}_{order.id}")
+    async with MarzbanClient(settings) as marzban:
+        if order.package_type == PackageType.unlimited_time.value:
+            from app.services.vpn_service import expiry_after_days
+
+            remote = await marzban.create_unlimited_time_user(
+                username,
+                expiry_after_days(None, int(order.duration_days or 0)),
+            )
+        else:
+            remote = await marzban.create_user(username, order.gb_amount)
+        subscription_url = marzban.get_subscription_url(username, remote)
+
+    batch = BulkBatch(
+        name=f"gift-{order.id}",
+        admin_telegram_id=buyer.telegram_id,
+        total_accounts=1,
+        total_gb=order.gb_amount,
+        status=BulkBatchStatus.completed.value,
+    )
+    session.add(batch)
+    await session.flush()
+    account = BulkAccount(
+        batch_id=batch.id,
+        marzban_username=username,
+        gb_amount=order.gb_amount,
+        subscription_url=subscription_url,
+        config_links_json="\n".join(remote.links),
+        status=VPNServiceStatus.active.value,
+    )
+    session.add(account)
+    order.status = OrderStatus.completed.value
+    order.marzban_username = username
+    await session.flush()
+    return DirectGiftAccountResult(username=username, subscription_url=subscription_url, config_links=remote.links)

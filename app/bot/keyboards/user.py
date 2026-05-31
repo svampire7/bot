@@ -55,7 +55,8 @@ def main_menu(_) -> InlineKeyboardMarkup:
 def purchase_target_keyboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("buy_for_me"), callback_data="target:self")
-    builder.button(text=_("buy_for_other"), callback_data="target:other")
+    builder.button(text=_("buy_for_other_redeem"), callback_data="target:other_redeem")
+    builder.button(text=_("buy_for_other_config"), callback_data="target:other_config")
     builder.button(text=_("back"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()

@@ -40,6 +40,7 @@ from app.services.gift_service import (
     GiftRedeemNotReady,
     GiftRedeemUsed,
     generate_redeem_code,
+    create_direct_gift_account,
     redeem_gift_order,
 )
 from app.services.order_service import OrderService
@@ -73,7 +74,7 @@ async def show_payment(
     package_price: int | None = None,
     package_type: str = PackageType.traffic.value,
     duration_days: int | None = None,
-    gift_mode: bool = False,
+    target_mode: str = "self",
 ):
     payment = PaymentService(settings)
     assert callback.from_user
@@ -104,15 +105,15 @@ async def show_payment(
             buyer_user_id=user.id,
             recipient_user_id=user.id,
             recipient_telegram_id=user.telegram_id,
-            buying_for_other=gift_mode,
-            gift_mode=gift_mode,
+            buying_for_other=target_mode != "self",
+            target_mode=target_mode,
         )
         await session.commit()
     await state.set_state(BuyStates.payment_method)
     await callback.message.edit_text(  # type: ignore[union-attr]
         _("wallet_purchase_prompt",
           package=order_package_label(_, package_type, gb, duration_days),
-          recipient=recipient_label(_, user.telegram_id, gift_mode),
+          recipient=recipient_label(_, target_mode),
           gb=gb,
           price=toman(price),
           balance=toman(balance)),
@@ -127,10 +128,36 @@ def order_package_label(_, package_type: str, gb: int, duration_days: int | None
     return _("traffic_package_label", gb=gb)
 
 
-def recipient_label(_, telegram_id: int, buying_for_other: bool) -> str:
-    if buying_for_other:
+def recipient_label(_, target_mode: str) -> str:
+    if target_mode == "redeem":
         return _("recipient_redeem_label")
+    if target_mode == "direct_config":
+        return _("recipient_direct_config_label")
     return _("recipient_self_label")
+
+
+def direct_gift_text(t, language: str, order, account) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return t(
+            "gift_direct_ready_unlimited",
+            language,
+            duration=duration_label(order.duration_days),
+            username=account.username,
+            subscription_url=html_code(account.subscription_url or "-"),
+            config_links=html_code_lines(account.config_links)
+            if account.config_links
+            else t("configs_not_available", language),
+        )
+    return t(
+        "gift_direct_ready",
+        language,
+        purchased_gb=order.gb_amount,
+        username=account.username,
+        subscription_url=html_code(account.subscription_url or "-"),
+        config_links=html_code_lines(account.config_links)
+        if account.config_links
+        else t("configs_not_available", language),
+    )
 
 
 async def gift_claim_link(bot, code: str | None) -> str | None:
@@ -262,11 +289,11 @@ async def purchase_for_self(
         int(data["price"]),
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
-        gift_mode=False,
+        target_mode="self",
     )
 
 
-@router.callback_query(F.data == "target:other")
+@router.callback_query(F.data.in_({"target:other", "target:other_redeem", "target:other_config"}))
 async def purchase_for_other(
     callback: CallbackQuery,
     state: FSMContext,
@@ -288,7 +315,7 @@ async def purchase_for_other(
         int(data["price"]),
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
-        gift_mode=True,
+        target_mode="direct_config" if callback.data == "target:other_config" else "redeem",
     )
 
 
@@ -361,8 +388,8 @@ async def wallet_payment_selected(
                 settings.default_language,
             )
             final_price = int(data["price"])
-            gift_mode = bool(data.get("gift_mode") or data.get("buying_for_other"))
-            gift_code = await generate_redeem_code(session) if gift_mode else None
+            target_mode = str(data.get("target_mode") or ("redeem" if data.get("gift_mode") else "self"))
+            gift_code = await generate_redeem_code(session) if target_mode == "redeem" else None
             balance = await WalletService().balance(session, buyer.id)
             if balance < final_price:
                 await callback.answer(
@@ -389,10 +416,12 @@ async def wallet_payment_selected(
                 purchased_by_user_id=buyer.id,
                 gift_delivery_token=gift_code,
             )
-            if gift_mode:
+            if target_mode == "redeem":
                 order.status = OrderStatus.approved.value
             order_id = order.id
             await WalletService().spend(session, buyer.id, final_price, order.id)
+            if target_mode == "direct_config":
+                direct_account = await create_direct_gift_account(session, settings, buyer, order)
             claim_token = order.gift_delivery_token
             buyer_language = buyer.language
     except InsufficientWalletBalance:
@@ -402,12 +431,22 @@ async def wallet_payment_selected(
         logger.exception("Wallet purchase failed", extra={"order_id": order_id})
         await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
         return
-    if bool(data.get("gift_mode") or data.get("buying_for_other")):
+    if str(data.get("target_mode") or ("redeem" if data.get("gift_mode") else "self")) == "redeem":
         claim_link = await gift_claim_link(bot, claim_token)
         await state.clear()
         await callback.message.edit_text(  # type: ignore[union-attr]
             _("gift_purchase_created", code=html_code(claim_token or "-"), claim_link=html_code(claim_link or "-")),
             reply_markup=gift_redeem_keyboard(_, claim_token or "-", claim_link),
+        )
+        await callback.answer()
+        return
+
+    if str(data.get("target_mode") or "self") == "direct_config":
+        await state.clear()
+        text = direct_gift_text(i18n.t, buyer_language, order, direct_account)
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            text,
+            reply_markup=service_copy_keyboard(_, direct_account.subscription_url),
         )
         await callback.answer()
         return
@@ -677,8 +716,7 @@ async def discount_code_entered(
           ),
           recipient=recipient_label(
               _,
-              int(data.get("recipient_telegram_id") or message.from_user.id),
-              bool(data.get("buying_for_other")),
+              str(data.get("target_mode") or ("redeem" if data.get("buying_for_other") else "self")),
           ),
           gb=int(data["gb"]),
           price=toman(final_price),
