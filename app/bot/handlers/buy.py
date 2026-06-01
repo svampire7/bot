@@ -9,10 +9,12 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.keyboards.user import (
+    GiftDeliveryCb,
     PackageCb,
     UnlimitedPackageCb,
     back_to_menu_keyboard,
     crypto_payment_keyboard,
+    gift_delivery_choice_keyboard,
     gift_redeem_keyboard,
     main_menu,
     packages_keyboard,
@@ -24,7 +26,7 @@ from app.bot.keyboards.user import (
     wallet_purchase_keyboard,
 )
 from app.config import Settings
-from app.db.models import OrderStatus, PackageType, User
+from app.db.models import Order, OrderStatus, PackageType, User
 from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
 from app.services.crypto_service import (
     CryptoPaymentError,
@@ -129,10 +131,8 @@ def order_package_label(_, package_type: str, gb: int, duration_days: int | None
 
 
 def recipient_label(_, target_mode: str) -> str:
-    if target_mode == "redeem":
-        return _("recipient_redeem_label")
-    if target_mode == "direct_config":
-        return _("recipient_direct_config_label")
+    if target_mode in {"gift", "redeem", "direct_config"}:
+        return _("recipient_gift_label")
     return _("recipient_self_label")
 
 
@@ -165,6 +165,19 @@ async def gift_claim_link(bot, code: str | None) -> str | None:
         return None
     me = await bot.get_me()
     return f"https://t.me/{me.username}?start=gift_{code}"
+
+
+async def owned_paid_gift_order(session, order_id: int, buyer: User) -> Order | None:
+    order = await session.get(Order, order_id)
+    if not order:
+        return None
+    if order.purchased_by_user_id != buyer.id:
+        return None
+    if order.status != OrderStatus.approved.value:
+        return None
+    if not order.gift_delivery_token:
+        return None
+    return order
 
 
 async def ask_purchase_target(
@@ -293,7 +306,7 @@ async def purchase_for_self(
     )
 
 
-@router.callback_query(F.data.in_({"target:other", "target:other_redeem", "target:other_config"}))
+@router.callback_query(F.data == "target:other")
 async def purchase_for_other(
     callback: CallbackQuery,
     state: FSMContext,
@@ -315,7 +328,7 @@ async def purchase_for_other(
         int(data["price"]),
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
-        target_mode="direct_config" if callback.data == "target:other_config" else "redeem",
+        target_mode="gift",
     )
 
 
@@ -378,6 +391,11 @@ async def wallet_payment_selected(
     data = await state.get_data()
     order_id = None
     failure_error = None
+    direct_account = None
+    claim_token = None
+    buyer_language = settings.default_language
+    final_price = int(data["price"])
+    target_mode = str(data.get("target_mode") or ("gift" if data.get("buying_for_other") else "self"))
     try:
         async with sessionmaker.begin() as session:
             buyer = await get_or_create_user(
@@ -387,9 +405,7 @@ async def wallet_payment_selected(
                 callback.from_user.first_name,
                 settings.default_language,
             )
-            final_price = int(data["price"])
-            target_mode = str(data.get("target_mode") or ("redeem" if data.get("gift_mode") else "self"))
-            gift_code = await generate_redeem_code(session) if target_mode == "redeem" else None
+            gift_code = await generate_redeem_code(session) if target_mode == "gift" else None
             balance = await WalletService().balance(session, buyer.id)
             if balance < final_price:
                 await callback.answer(
@@ -416,12 +432,10 @@ async def wallet_payment_selected(
                 purchased_by_user_id=buyer.id,
                 gift_delivery_token=gift_code,
             )
-            if target_mode == "redeem":
+            if target_mode == "gift":
                 order.status = OrderStatus.approved.value
             order_id = order.id
             await WalletService().spend(session, buyer.id, final_price, order.id)
-            if target_mode == "direct_config":
-                direct_account = await create_direct_gift_account(session, settings, buyer, order)
             claim_token = order.gift_delivery_token
             buyer_language = buyer.language
     except InsufficientWalletBalance:
@@ -431,30 +445,17 @@ async def wallet_payment_selected(
         logger.exception("Wallet purchase failed", extra={"order_id": order_id})
         await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
         return
-    if str(data.get("target_mode") or ("redeem" if data.get("gift_mode") else "self")) == "redeem":
-        claim_link = await gift_claim_link(bot, claim_token)
+    if target_mode == "gift":
         await state.clear()
         await callback.message.edit_text(  # type: ignore[union-attr]
-            _("gift_purchase_created", code=html_code(claim_token or "-"), claim_link=html_code(claim_link or "-")),
-            reply_markup=gift_redeem_keyboard(_, claim_token or "-", claim_link),
-        )
-        await callback.answer()
-        return
-
-    if str(data.get("target_mode") or "self") == "direct_config":
-        await state.clear()
-        text = direct_gift_text(i18n.t, buyer_language, order, direct_account)
-        await callback.message.edit_text(  # type: ignore[union-attr]
-            text,
-            reply_markup=service_copy_keyboard(_, direct_account.subscription_url),
+            _("gift_delivery_choose"),
+            reply_markup=gift_delivery_choice_keyboard(_, int(order_id or 0)),
         )
         await callback.answer()
         return
 
     try:
         async with sessionmaker.begin() as session:
-            from app.db.models import Order
-
             order = await session.get(Order, order_id)
             buyer = await session.get(User, int(data.get("buyer_user_id") or 0)) if data.get("buyer_user_id") else None
             if not order or not buyer:
@@ -511,6 +512,74 @@ async def wallet_payment_selected(
         reply_markup=service_copy_keyboard(_, subscription_url),
     )
     await notify_referrer_about_reward(bot, i18n, referral_reward)
+    await callback.answer()
+
+
+@router.callback_query(GiftDeliveryCb.filter(F.action == "redeem"))
+async def gift_delivery_redeem_selected(
+    callback: CallbackQuery,
+    callback_data: GiftDeliveryCb,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    bot,
+    _,
+) -> None:
+    assert callback.from_user
+    async with sessionmaker() as session:
+        buyer = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        order = await owned_paid_gift_order(session, callback_data.order_id, buyer)
+        if not order:
+            await callback.answer(_("gift_delivery_unavailable"), show_alert=True)
+            return
+        claim_token = order.gift_delivery_token
+        await session.commit()
+    claim_link = await gift_claim_link(bot, claim_token)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("gift_purchase_created", code=html_code(claim_token or "-"), claim_link=html_code(claim_link or "-")),
+        reply_markup=gift_redeem_keyboard(_, claim_token or "-", claim_link),
+    )
+    await callback.answer()
+
+
+@router.callback_query(GiftDeliveryCb.filter(F.action == "config"))
+async def gift_delivery_config_selected(
+    callback: CallbackQuery,
+    callback_data: GiftDeliveryCb,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    i18n,
+    _,
+) -> None:
+    assert callback.from_user
+    try:
+        async with sessionmaker.begin() as session:
+            buyer = await get_or_create_user(
+                session,
+                callback.from_user.id,
+                callback.from_user.username,
+                callback.from_user.first_name,
+                settings.default_language,
+            )
+            order = await owned_paid_gift_order(session, callback_data.order_id, buyer)
+            if not order:
+                await callback.answer(_("gift_delivery_unavailable"), show_alert=True)
+                return
+            direct_account = await create_direct_gift_account(session, settings, buyer, order)
+            text = direct_gift_text(i18n.t, buyer.language, order, direct_account)
+    except Exception as exc:
+        logger.exception("Direct gift delivery failed", extra={"order_id": callback_data.order_id})
+        await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
+        return
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        text,
+        reply_markup=service_copy_keyboard(_, direct_account.subscription_url),
+    )
     await callback.answer()
 
 
@@ -716,7 +785,7 @@ async def discount_code_entered(
           ),
           recipient=recipient_label(
               _,
-              str(data.get("target_mode") or ("redeem" if data.get("buying_for_other") else "self")),
+              str(data.get("target_mode") or ("gift" if data.get("buying_for_other") else "self")),
           ),
           gb=int(data["gb"]),
           price=toman(final_price),

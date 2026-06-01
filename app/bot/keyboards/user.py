@@ -26,6 +26,11 @@ class ServiceCb(CallbackData, prefix="svc"):
     action: str
 
 
+class GiftDeliveryCb(CallbackData, prefix="giftdel"):
+    action: str
+    order_id: int
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="فارسی", callback_data=LangCb(code="fa"))
@@ -55,9 +60,23 @@ def main_menu(_) -> InlineKeyboardMarkup:
 def purchase_target_keyboard(_) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=_("buy_for_me"), callback_data="target:self")
-    builder.button(text=_("buy_for_other_redeem"), callback_data="target:other_redeem")
-    builder.button(text=_("buy_for_other_config"), callback_data="target:other_config")
+    builder.button(text=_("buy_for_other"), callback_data="target:other")
     builder.button(text=_("back"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def gift_delivery_choice_keyboard(_, order_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text=_("gift_delivery_redeem"),
+        callback_data=GiftDeliveryCb(action="redeem", order_id=order_id),
+    )
+    builder.button(
+        text=_("gift_delivery_config"),
+        callback_data=GiftDeliveryCb(action="config", order_id=order_id),
+    )
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()
 

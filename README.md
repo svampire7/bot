@@ -147,15 +147,16 @@ docker compose run --rm bot alembic revision --autogenerate -m "change message"
 
 1. User selects a traffic package or an unlimited time package.
 2. User chooses whether the service is for themselves or another person.
-3. For another person, the buyer can choose either:
+3. User pays from wallet.
+4. For another person, after successful payment the buyer chooses either:
    - receive a redeem code/link so the real customer activates the service in their own Telegram account
    - create a standalone config immediately and forward the subscription/config data themselves
-4. With redeem codes, the real customer starts the bot and enters the redeem code from `Redeem Gift Code`, or opens the direct redeem link.
-5. With direct config delivery, the bot creates a standalone Marzban account and stores it as a bulk account, without touching the buyer's own active service.
-6. If a manual receipt flow is enabled later, the bot stores only Telegram `file_id`, not the actual receipt file.
-7. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
-8. If Marzban succeeds, order becomes `completed` and the recipient receives service data.
-9. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
+5. With redeem codes, the real customer starts the bot and enters the redeem code from `Redeem Gift Code`, or opens the direct redeem link.
+6. With direct config delivery, the bot creates a standalone Marzban account and stores it as a bulk account, without touching the buyer's own active service.
+7. If a manual receipt flow is enabled later, the bot stores only Telegram `file_id`, not the actual receipt file.
+8. Approval locks/checks order status first. If it is not `pending_admin`, duplicate approval is rejected.
+9. If Marzban succeeds, order becomes `completed` and the recipient receives service data.
+10. If Marzban fails, order becomes `failed`, the error is saved in `admin_note`, and admin is notified.
 
 ## Card Reference Gate
 
@@ -240,7 +241,7 @@ Persian:
 5. انتخاب `برای خودم` یا `برای شخص دیگر`
 6. پرداخت از کیف پول
 7. برای خرید خودتان: دریافت لینک اشتراک و کانفیگ‌ها
-8. برای شخص دیگر: دریافت کد فعال‌سازی یا دریافت کانفیگ آماده و ارسال آن به مشتری
+8. برای شخص دیگر: بعد از پرداخت، انتخاب بین کد فعال‌سازی یا ساخت کانفیگ آماده و ارسال آن به مشتری
 
 English:
 
@@ -251,7 +252,7 @@ English:
 5. Choose `For me` or `For someone else`
 6. Pay from wallet
 7. For your own purchase: receive subscription link and configs
-8. For someone else: receive a redeem code, or receive ready configs and send them to the customer
+8. For someone else: after payment, choose a redeem code or ready configs to send to the customer
 
 ## Admin Panel
 
