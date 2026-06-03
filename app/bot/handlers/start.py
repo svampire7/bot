@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.bot.handlers.buy import service_ready_text
+from app.bot.handlers.buy import load_purchase_draft, send_config_messages, service_summary_text
 from app.bot.keyboards.user import invite_keyboard, language_keyboard, main_menu, service_copy_keyboard
 from app.config import Settings
 from app.db.repositories import (
@@ -43,12 +43,13 @@ async def start(
         if payload.startswith("gift_"):
             try:
                 result = await redeem_gift_order(session, settings, user, payload[5:])
-                text = service_ready_text(i18n.t, user.language, result.order, result.service, result.config_links)
+                text = service_summary_text(i18n.t, user.language, result.order, result.service)
                 await session.commit()
                 await message.answer(
                     _("gift_claim_ready") + "\n\n" + text,
                     reply_markup=service_copy_keyboard(_, result.service.subscription_url),
                 )
+                await send_config_messages(message, _, result.config_links, user.language, i18n.t)
                 await notify_referrer_about_reward(bot, i18n, result.referral_reward)
             except GiftRedeemInvalid:
                 await session.commit()
@@ -68,7 +69,7 @@ async def start(
 
 
 @router.message(Command("menu"))
-async def menu(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _) -> None:
+async def menu(message: Message, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, redis, _) -> None:
     assert message.from_user
     await state.clear()
     async with sessionmaker() as session:
@@ -80,7 +81,8 @@ async def menu(message: Message, state: FSMContext, sessionmaker: async_sessionm
             settings.default_language,
         )
         await session.commit()
-    await message.answer(_("main_menu"), reply_markup=main_menu(_))
+    has_saved = bool(await load_purchase_draft(redis, message.from_user.id))
+    await message.answer(_("main_menu"), reply_markup=main_menu(_, has_saved_purchase=has_saved))
 
 
 @router.message(Command("id"))
@@ -90,12 +92,14 @@ async def show_telegram_id(message: Message, _) -> None:
 
 
 @router.callback_query(F.data == "menu:main")
-async def show_main_menu(callback: CallbackQuery, state: FSMContext, _) -> None:
+async def show_main_menu(callback: CallbackQuery, state: FSMContext, redis, _) -> None:
     await state.clear()
+    assert callback.from_user
+    has_saved = bool(await load_purchase_draft(redis, callback.from_user.id))
     try:
-        await callback.message.edit_text(_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
+        await callback.message.edit_text(_("main_menu"), reply_markup=main_menu(_, has_saved_purchase=has_saved))  # type: ignore[union-attr]
     except TelegramBadRequest:
-        await callback.message.edit_caption(caption=_("main_menu"), reply_markup=main_menu(_))  # type: ignore[union-attr]
+        await callback.message.edit_caption(caption=_("main_menu"), reply_markup=main_menu(_, has_saved_purchase=has_saved))  # type: ignore[union-attr]
     await callback.answer()
 
 

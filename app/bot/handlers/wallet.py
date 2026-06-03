@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.bot.keyboards.admin import pending_wallet_keyboard
 from app.bot.keyboards.user import (
     back_to_menu_keyboard,
+    continue_purchase_keyboard,
     main_menu,
     wallet_card_keyboard,
     wallet_crypto_keyboard,
@@ -26,11 +27,13 @@ from app.db.repositories import (
     crypto_quote_for_update,
     get_or_create_user,
     order_by_crypto_tx_hash,
+    pending_wallet_topup_total_for_user,
     unlock_card_access_with_reference,
     user_is_known_for_card_access,
     wallet_history,
     wallet_transaction_by_crypto_tx_hash,
 )
+from app.bot.handlers.buy import load_purchase_draft
 from app.db.models import CryptoPaymentQuoteStatus
 from app.services.crypto_service import (
     CryptoPaymentError,
@@ -90,9 +93,10 @@ async def wallet_menu(
             settings.default_language,
         )
         balance = await WalletService().balance(session, user.id)
+        pending_topup = await pending_wallet_topup_total_for_user(session, user.id)
         history = await wallet_history(session, user.id, limit=6)
         await session.commit()
-    text = _("wallet_text", balance=toman(balance), history=wallet_history_text(_, history))
+    text = _("wallet_text", balance=toman(balance), pending=toman(pending_topup), history=wallet_history_text(_, history))
     try:
         await callback.message.edit_text(text, reply_markup=wallet_keyboard(_))  # type: ignore[union-attr]
     except TelegramBadRequest:
@@ -106,6 +110,121 @@ async def ask_wallet_amount(callback: CallbackQuery, state: FSMContext, _) -> No
     await state.update_data(wallet_payment_method=method)
     await state.set_state(WalletStates.amount)
     await callback.message.edit_text(_("enter_topup_amount"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@router.callback_query(F.data.in_({"wallet:needed:card", "wallet:needed:ltc"}))
+async def exact_needed_wallet_topup(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    redis: Redis,
+    _,
+) -> None:
+    assert callback.from_user
+    draft = await load_purchase_draft(redis, callback.from_user.id)
+    if not draft:
+        await callback.answer(_("saved_purchase_not_found"), show_alert=True)
+        return
+    async with sessionmaker() as session:
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        balance = await WalletService().balance(session, user.id)
+        await session.commit()
+    amount = max(int(draft["price"]) - balance, 0)
+    if amount <= 0:
+        await callback.message.edit_text(_("wallet_now_enough"), reply_markup=continue_purchase_keyboard(_))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    method = "card" if callback.data == "wallet:needed:card" else "crypto_ltc"
+    await state.update_data(wallet_payment_method=method, amount_toman=amount)
+    if method == "card":
+        payment = PaymentService(settings)
+        async with sessionmaker() as session:
+            card_locked = await payment.card_reference_required(session) and not await user_is_known_for_card_access(
+                session, user.id
+            )
+            if card_locked:
+                await state.set_state(WalletStates.card_reference)
+                await callback.message.edit_text(_("card_reference_required"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
+                await callback.answer()
+                return
+            card_number = await payment.card_number(session)
+            text = _(
+                "wallet_card_instructions",
+                amount=toman(amount),
+                card_number=html_code(card_number),
+                card_holder=html_escape(await payment.card_holder_name(session)),
+                bank=html_escape(await payment.bank_name(session)),
+                support=html_code(await payment.support_username(session)),
+            )
+        await state.set_state(WalletStates.receipt)
+        await callback.message.edit_text(text, reply_markup=wallet_card_keyboard(_, card_number))  # type: ignore[union-attr]
+        await callback.answer()
+        return
+    payment = PaymentService(settings)
+    async with sessionmaker() as session:
+        wallet = await payment.crypto_ltc_wallet(session)
+        qr_file_id = await payment.crypto_ltc_qr_file_id(session)
+        fallback_rate = await payment.ltc_toman_rate(session)
+        bonus_percent = await payment.crypto_ltc_bonus_percent(session)
+    if not wallet:
+        await callback.message.edit_text(_("crypto_not_configured"), reply_markup=main_menu(_))  # type: ignore[union-attr]
+        await state.clear()
+        await callback.answer()
+        return
+    try:
+        rate = await live_ltc_toman_rate(settings, fallback_rate)
+    except CryptoPaymentError as exc:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            _("crypto_price_failed", error=html_escape(str(exc))),
+            reply_markup=main_menu(_),
+        )
+        await state.clear()
+        await callback.answer()
+        return
+    expected = toman_to_ltc(amount, rate)
+    bonus_amount = crypto_bonus_amount(amount, bonus_percent)
+    credit_amount = crypto_credit_amount(amount, bonus_percent)
+    async with sessionmaker.begin() as session:
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        quote = await create_crypto_quote(session, user.id, credit_amount, str(expected), rate, wallet)
+    await state.update_data(
+        amount_toman=credit_amount,
+        crypto_pay_amount_toman=amount,
+        crypto_bonus_toman=bonus_amount,
+        crypto_bonus_percent=bonus_percent,
+        crypto_expected_ltc=str(expected),
+        quote_id=quote.id,
+    )
+    await state.set_state(WalletStates.crypto_tx)
+    text = _(
+        "wallet_ltc_instructions",
+        quote_id=quote.id,
+        pay_amount=toman(amount),
+        credit_amount=toman(credit_amount),
+        bonus_amount=toman(bonus_amount),
+        bonus_percent=bonus_percent,
+        ltc=str(expected),
+        wallet=html_code(wallet),
+        rate=toman(rate),
+    )
+    if qr_file_id:
+        await callback.message.answer_photo(qr_file_id, caption=text, reply_markup=wallet_crypto_keyboard(_, wallet))  # type: ignore[union-attr]
+    else:
+        await callback.message.edit_text(text, reply_markup=wallet_crypto_keyboard(_, wallet))  # type: ignore[union-attr]
     await callback.answer()
 
 
@@ -278,8 +397,12 @@ async def wallet_receipt_uploaded(
         tx = await WalletService().create_card_topup(
             session, user.id, int(data["amount_toman"]), receipt_file_id
         )
+    has_saved_purchase = bool(await load_purchase_draft(redis, message.from_user.id))
     await state.clear()
-    await message.answer(_("wallet_receipt_created", tx_id=tx.id), reply_markup=main_menu(_))
+    await message.answer(
+        _("wallet_receipt_created", tx_id=tx.id),
+        reply_markup=continue_purchase_keyboard(_) if has_saved_purchase else main_menu(_),
+    )
     await notify_admins_about_wallet_topup(
         bot,
         settings,
@@ -362,10 +485,11 @@ async def wallet_crypto_tx_submitted(
             note=f"quote #{data['quote_id']}; paid={data.get('crypto_pay_amount_toman')}; bonus={data.get('crypto_bonus_toman', 0)}",
         )
         balance = await WalletService().balance(session, user.id)
+    has_saved_purchase = bool(await load_purchase_draft(redis, message.from_user.id))
     await state.clear()
     await message.answer(
         _("wallet_ltc_topup_done", amount=toman(tx.amount_toman), balance=toman(balance)),
-        reply_markup=main_menu(_),
+        reply_markup=continue_purchase_keyboard(_) if has_saved_purchase else main_menu(_),
     )
 
 

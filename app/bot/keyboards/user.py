@@ -31,6 +31,10 @@ class GiftDeliveryCb(CallbackData, prefix="giftdel"):
     order_id: int
 
 
+class CopyConfigCb(CallbackData, prefix="copycfg"):
+    index: int
+
+
 def language_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="فارسی", callback_data=LangCb(code="fa"))
@@ -38,8 +42,10 @@ def language_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def main_menu(_) -> InlineKeyboardMarkup:
+def main_menu(_, has_saved_purchase: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if has_saved_purchase:
+        builder.button(text=_("continue_saved_purchase"), callback_data="purchase:continue")
     builder.button(text=_("buy_unlimited_time"), callback_data="menu:buy_unlimited")
     builder.button(text=_("buy_vpn"), callback_data="menu:buy")
     builder.button(text=_("free_trial"), callback_data="menu:trial")
@@ -53,7 +59,10 @@ def main_menu(_) -> InlineKeyboardMarkup:
     builder.button(text=_("invite_friends"), callback_data="menu:invite")
     builder.button(text=_("reseller_panel"), callback_data="menu:reseller")
     builder.button(text=_("change_language"), callback_data="menu:lang")
-    builder.adjust(2, 2, 2, 2, 2, 2, 1)
+    if has_saved_purchase:
+        builder.adjust(1, 2, 2, 2, 2, 2, 2, 1)
+    else:
+        builder.adjust(2, 2, 2, 2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -128,24 +137,28 @@ def trial_ready_keyboard(_, subscription_url: str | None) -> InlineKeyboardMarku
     return builder.as_markup()
 
 
-def packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarkup:
+def packages_keyboard(_, packages: list[tuple[int, int]], has_saved_purchase: bool = False) -> InlineKeyboardMarkup:
     from app.utils.formatters import toman
 
     builder = InlineKeyboardBuilder()
     for gb, price in packages:
         builder.button(text=f"{gb}GB - {toman(price)}", callback_data=PackageCb(gb=gb))
+    if has_saved_purchase:
+        builder.button(text=_("continue_saved_purchase"), callback_data="purchase:continue")
     builder.button(text=_("custom_gb"), callback_data="pkg:custom")
     builder.button(text=_("back"), callback_data="menu:main")
-    builder.adjust(2, 2, 1, 1)
+    builder.adjust(2, 2, 1, 1, 1)
     return builder.as_markup()
 
 
-def unlimited_packages_keyboard(_, packages: list[tuple[int, int]]) -> InlineKeyboardMarkup:
+def unlimited_packages_keyboard(_, packages: list[tuple[int, int]], has_saved_purchase: bool = False) -> InlineKeyboardMarkup:
     from app.utils.formatters import duration_label, toman
 
     builder = InlineKeyboardBuilder()
     for days, price in packages:
         builder.button(text=f"{duration_label(days)} - {toman(price)}", callback_data=UnlimitedPackageCb(days=days))
+    if has_saved_purchase:
+        builder.button(text=_("continue_saved_purchase"), callback_data="purchase:continue")
     builder.button(text=_("back"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()
@@ -189,10 +202,16 @@ def payment_method_keyboard(_, allow_discount: bool = True) -> InlineKeyboardMar
     return builder.as_markup()
 
 
-def wallet_purchase_keyboard(_, allow_discount: bool = True) -> InlineKeyboardMarkup:
+def wallet_purchase_keyboard(_, allow_discount: bool = True, shortfall: int | None = None) -> InlineKeyboardMarkup:
+    from app.utils.formatters import toman
+
     builder = InlineKeyboardBuilder()
     builder.button(text=_("pay_from_wallet"), callback_data="pay:wallet")
-    builder.button(text=_("topup_wallet"), callback_data="menu:wallet")
+    if shortfall and shortfall > 0:
+        builder.button(text=_("topup_exact_card", amount=toman(shortfall)), callback_data="wallet:needed:card")
+        builder.button(text=_("topup_exact_ltc", amount=toman(shortfall)), callback_data="wallet:needed:ltc")
+    else:
+        builder.button(text=_("topup_wallet"), callback_data="menu:wallet")
     if allow_discount:
         builder.button(text=_("apply_discount"), callback_data="pay:discount")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
@@ -245,6 +264,21 @@ def service_copy_keyboard(_, subscription_url: str | None) -> InlineKeyboardMark
         )
     builder.button(text=_("refresh_usage"), callback_data=ServiceCb(action="refresh"))
     builder.button(text=_("buy_more_traffic"), callback_data="menu:renew")
+    builder.button(text=_("back_to_menu"), callback_data="menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def copy_config_keyboard(_, config_text: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("copy_config"), copy_text=CopyTextButton(text=config_text))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def continue_purchase_keyboard(_) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=_("continue_saved_purchase"), callback_data="purchase:continue")
     builder.button(text=_("back_to_menu"), callback_data="menu:main")
     builder.adjust(1)
     return builder.as_markup()

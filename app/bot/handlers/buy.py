@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -14,6 +15,8 @@ from app.bot.keyboards.user import (
     UnlimitedPackageCb,
     back_to_menu_keyboard,
     crypto_payment_keyboard,
+    continue_purchase_keyboard,
+    copy_config_keyboard,
     gift_delivery_choice_keyboard,
     gift_redeem_keyboard,
     main_menu,
@@ -27,7 +30,7 @@ from app.bot.keyboards.user import (
 )
 from app.config import Settings
 from app.db.models import Order, OrderStatus, PackageType, User
-from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash
+from app.db.repositories import get_or_create_user, order_by_crypto_tx_hash, pending_wallet_topup_total_for_user
 from app.services.crypto_service import (
     CryptoPaymentError,
     normalize_tx_hash,
@@ -55,6 +58,7 @@ from app.utils.validators import parse_positive_int
 
 router = Router()
 logger = logging.getLogger(__name__)
+PURCHASE_DRAFT_TTL_SECONDS = 60 * 60 * 24
 
 
 class BuyStates(StatesGroup):
@@ -64,6 +68,51 @@ class BuyStates(StatesGroup):
     receipt = State()
     crypto_tx = State()
     discount_code = State()
+
+
+def purchase_draft_key(telegram_id: int) -> str:
+    return f"purchase_draft:{telegram_id}"
+
+
+def purchase_draft_from_state(data: dict) -> dict:
+    keys = {
+        "gb",
+        "price",
+        "original_price",
+        "discount_code",
+        "discount_amount",
+        "package_type",
+        "duration_days",
+        "target_mode",
+        "buying_for_other",
+    }
+    return {key: data.get(key) for key in keys if key in data}
+
+
+async def save_purchase_draft(redis: Redis, telegram_id: int, data: dict) -> None:
+    draft = purchase_draft_from_state(data)
+    if draft.get("price") is None or draft.get("gb") is None:
+        return
+    await redis.set(purchase_draft_key(telegram_id), json.dumps(draft), ex=PURCHASE_DRAFT_TTL_SECONDS)
+
+
+async def load_purchase_draft(redis: Redis, telegram_id: int) -> dict | None:
+    raw = await redis.get(purchase_draft_key(telegram_id))
+    if not raw:
+        return None
+    try:
+        draft = json.loads(raw)
+    except json.JSONDecodeError:
+        await redis.delete(purchase_draft_key(telegram_id))
+        return None
+    if not isinstance(draft, dict) or draft.get("price") is None or draft.get("gb") is None:
+        await redis.delete(purchase_draft_key(telegram_id))
+        return None
+    return draft
+
+
+async def clear_purchase_draft(redis: Redis, telegram_id: int) -> None:
+    await redis.delete(purchase_draft_key(telegram_id))
 
 
 async def show_payment(
@@ -77,6 +126,7 @@ async def show_payment(
     package_type: str = PackageType.traffic.value,
     duration_days: int | None = None,
     target_mode: str = "self",
+    redis: Redis | None = None,
 ):
     payment = PaymentService(settings)
     assert callback.from_user
@@ -96,6 +146,20 @@ async def show_payment(
             return
         price = package_price if package_price is not None else gb * price_per_gb
         balance = await WalletService().balance(session, user.id)
+        draft_data = {
+            "gb": gb,
+            "price": price,
+            "original_price": price,
+            "discount_code": None,
+            "discount_amount": 0,
+            "package_type": package_type,
+            "duration_days": duration_days,
+            "buyer_user_id": user.id,
+            "recipient_user_id": user.id,
+            "recipient_telegram_id": user.telegram_id,
+            "buying_for_other": target_mode != "self",
+            "target_mode": target_mode,
+        }
         await state.update_data(
             gb=gb,
             price=price,
@@ -110,16 +174,20 @@ async def show_payment(
             buying_for_other=target_mode != "self",
             target_mode=target_mode,
         )
+        if redis:
+            await save_purchase_draft(redis, callback.from_user.id, draft_data)
         await session.commit()
     await state.set_state(BuyStates.payment_method)
+    shortfall = max(price - balance, 0)
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("wallet_purchase_prompt",
+        _("wallet_purchase_prompt_low_balance" if shortfall else "wallet_purchase_prompt",
           package=order_package_label(_, package_type, gb, duration_days),
           recipient=recipient_label(_, target_mode),
           gb=gb,
           price=toman(price),
-          balance=toman(balance)),
-        reply_markup=wallet_purchase_keyboard(_),
+          balance=toman(balance),
+          shortfall=toman(shortfall)),
+        reply_markup=wallet_purchase_keyboard(_, shortfall=shortfall),
     )
     await callback.answer()
 
@@ -160,6 +228,47 @@ def direct_gift_text(t, language: str, order, account) -> str:
     )
 
 
+def direct_gift_summary_text(t, language: str, order, account) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return t(
+            "gift_direct_ready_summary_unlimited",
+            language,
+            duration=duration_label(order.duration_days),
+            username=account.username,
+            subscription_url=html_code(account.subscription_url or "-"),
+        )
+    return t(
+        "gift_direct_ready_summary",
+        language,
+        purchased_gb=order.gb_amount,
+        username=account.username,
+        subscription_url=html_code(account.subscription_url or "-"),
+    )
+
+
+async def send_config_messages(message: Message, _, config_links: list[str], language: str, t) -> None:
+    if not config_links:
+        await message.answer(t("configs_not_available", language))
+        return
+    for index, config in enumerate(config_links, start=1):
+        await message.answer(
+            t("config_link_message", language, index=index, config=html_code(config)),
+            reply_markup=copy_config_keyboard(_, config),
+        )
+
+
+async def send_config_messages_to_bot(bot, chat_id: int, _, config_links: list[str], language: str, t) -> None:
+    if not config_links:
+        await bot.send_message(chat_id, t("configs_not_available", language))
+        return
+    for index, config in enumerate(config_links, start=1):
+        await bot.send_message(
+            chat_id,
+            t("config_link_message", language, index=index, config=html_code(config)),
+            reply_markup=copy_config_keyboard(_, config),
+        )
+
+
 async def gift_claim_link(bot, code: str | None) -> str | None:
     if not code:
         return None
@@ -184,12 +293,26 @@ async def ask_purchase_target(
     callback: CallbackQuery,
     state: FSMContext,
     _,
+    sessionmaker: async_sessionmaker | None = None,
+    settings: Settings | None = None,
     *,
     gb: int,
     price: int,
     package_type: str,
     duration_days: int | None = None,
 ) -> None:
+    balance = None
+    if sessionmaker and settings and callback.from_user:
+        async with sessionmaker() as session:
+            user = await get_or_create_user(
+                session,
+                callback.from_user.id,
+                callback.from_user.username,
+                callback.from_user.first_name,
+                settings.default_language,
+            )
+            balance = await WalletService().balance(session, user.id)
+            await session.commit()
     await state.update_data(
         gb=gb,
         price=price,
@@ -200,7 +323,12 @@ async def ask_purchase_target(
         duration_days=duration_days,
     )
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("select_purchase_target", package=order_package_label(_, package_type, gb, duration_days), price=toman(price)),
+        _(
+            "select_purchase_target_with_balance" if balance is not None else "select_purchase_target",
+            package=order_package_label(_, package_type, gb, duration_days),
+            price=toman(price),
+            balance=toman(balance or 0),
+        ),
         reply_markup=purchase_target_keyboard(_),
     )
     await callback.answer()
@@ -208,25 +336,52 @@ async def ask_purchase_target(
 
 @router.callback_query(F.data.in_({"menu:buy", "menu:renew"}))
 async def buy_menu(
-    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, redis: Redis, _
 ) -> None:
     await state.clear()
+    assert callback.from_user
     async with sessionmaker() as session:
         packages = await PaymentService(settings).package_prices(session)
-    await callback.message.edit_text(_("select_package"), reply_markup=packages_keyboard(_, packages))  # type: ignore[union-attr]
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        balance = await WalletService().balance(session, user.id)
+        pending_topup = await pending_wallet_topup_total_for_user(session, user.id)
+        has_saved = bool(await load_purchase_draft(redis, callback.from_user.id))
+        await session.commit()
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _("select_package_with_balance", balance=toman(balance), pending=toman(pending_topup)),
+        reply_markup=packages_keyboard(_, packages, has_saved_purchase=has_saved),
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data == "menu:buy_unlimited")
 async def unlimited_buy_menu(
-    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, _
+    callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker, settings: Settings, redis: Redis, _
 ) -> None:
     await state.clear()
+    assert callback.from_user
     async with sessionmaker() as session:
         packages = await PaymentService(settings).unlimited_time_packages(session)
+        user = await get_or_create_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name,
+            settings.default_language,
+        )
+        balance = await WalletService().balance(session, user.id)
+        pending_topup = await pending_wallet_topup_total_for_user(session, user.id)
+        has_saved = bool(await load_purchase_draft(redis, callback.from_user.id))
+        await session.commit()
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _("select_unlimited_package"),
-        reply_markup=unlimited_packages_keyboard(_, packages),
+        _("select_unlimited_package_with_balance", balance=toman(balance), pending=toman(pending_topup)),
+        reply_markup=unlimited_packages_keyboard(_, packages, has_saved_purchase=has_saved),
     )
     await callback.answer()
 
@@ -249,6 +404,8 @@ async def package_selected(
         callback,
         state,
         _,
+        sessionmaker,
+        settings,
         gb=callback_data.gb,
         price=package_price,
         package_type=PackageType.traffic.value,
@@ -273,6 +430,8 @@ async def unlimited_package_selected(
         callback,
         state,
         _,
+        sessionmaker,
+        settings,
         gb=0,
         price=package_price,
         package_type=PackageType.unlimited_time.value,
@@ -286,6 +445,7 @@ async def purchase_for_self(
     state: FSMContext,
     sessionmaker: async_sessionmaker,
     settings: Settings,
+    redis: Redis,
     _,
 ) -> None:
     data = await state.get_data()
@@ -303,6 +463,7 @@ async def purchase_for_self(
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
         target_mode="self",
+        redis=redis,
     )
 
 
@@ -312,6 +473,7 @@ async def purchase_for_other(
     state: FSMContext,
     sessionmaker: async_sessionmaker,
     settings: Settings,
+    redis: Redis,
     _,
 ) -> None:
     data = await state.get_data()
@@ -329,6 +491,7 @@ async def purchase_for_other(
         package_type=str(data.get("package_type") or PackageType.traffic.value),
         duration_days=int(data["duration_days"]) if data.get("duration_days") else None,
         target_mode="gift",
+        redis=redis,
     )
 
 
@@ -337,6 +500,35 @@ async def custom_package(callback: CallbackQuery, state: FSMContext, _) -> None:
     await state.set_state(BuyStates.custom_gb)
     await callback.message.edit_text(_("enter_custom_gb"), reply_markup=back_to_menu_keyboard(_))  # type: ignore[union-attr]
     await callback.answer()
+
+
+@router.callback_query(F.data == "purchase:continue")
+async def continue_saved_purchase(
+    callback: CallbackQuery,
+    state: FSMContext,
+    sessionmaker: async_sessionmaker,
+    settings: Settings,
+    redis: Redis,
+    _,
+) -> None:
+    assert callback.from_user
+    draft = await load_purchase_draft(redis, callback.from_user.id)
+    if not draft:
+        await callback.answer(_("saved_purchase_not_found"), show_alert=True)
+        return
+    await show_payment(
+        callback,
+        state,
+        int(draft["gb"]),
+        sessionmaker,
+        settings,
+        _,
+        int(draft["price"]),
+        package_type=str(draft.get("package_type") or PackageType.traffic.value),
+        duration_days=int(draft["duration_days"]) if draft.get("duration_days") else None,
+        target_mode=str(draft.get("target_mode") or ("gift" if draft.get("buying_for_other") else "self")),
+        redis=redis,
+    )
 
 
 @router.message(BuyStates.custom_gb)
@@ -372,7 +564,12 @@ async def custom_gb(
             duration_days=None,
         )
     await message.answer(
-        _("select_purchase_target", package=order_package_label(_, PackageType.traffic.value, gb), price=toman(price)),
+        _(
+            "select_purchase_target_with_balance",
+            package=order_package_label(_, PackageType.traffic.value, gb),
+            price=toman(price),
+            balance=toman(balance),
+        ),
         reply_markup=purchase_target_keyboard(_),
     )
 
@@ -385,6 +582,7 @@ async def wallet_payment_selected(
     settings: Settings,
     bot,
     i18n,
+    redis: Redis,
     _,
 ) -> None:
     assert callback.from_user
@@ -408,11 +606,14 @@ async def wallet_payment_selected(
             gift_code = await generate_redeem_code(session) if target_mode == "gift" else None
             balance = await WalletService().balance(session, buyer.id)
             if balance < final_price:
+                shortfall = final_price - balance
+                await save_purchase_draft(redis, callback.from_user.id, data)
                 await callback.answer(
                     _(
                         "insufficient_wallet_balance_detail",
                         balance=toman(balance),
                         required=toman(final_price),
+                        shortfall=toman(shortfall),
                     ),
                     show_alert=True,
                 )
@@ -447,6 +648,7 @@ async def wallet_payment_selected(
         return
     if target_mode == "gift":
         await state.clear()
+        await clear_purchase_draft(redis, callback.from_user.id)
         await callback.message.edit_text(  # type: ignore[union-attr]
             _("gift_delivery_choose"),
             reply_markup=gift_delivery_choice_keyboard(_, int(order_id or 0)),
@@ -476,8 +678,9 @@ async def wallet_payment_selected(
                 text = ""
                 subscription_url = None
             else:
-                text = service_ready_text(i18n.t, buyer.language, order, service, config_links)
+                text = service_summary_text(i18n.t, buyer.language, order, service)
                 subscription_url = service.subscription_url
+                buyer_language = buyer.language
                 recipient_telegram_id = buyer.telegram_id
                 buyer_telegram_id = buyer.telegram_id
     except Exception as exc:
@@ -493,6 +696,7 @@ async def wallet_payment_selected(
     if referral_reward.pending_bonus_gb:
         text += "\n" + _("referral_pending_bonus_applied", bonus_gb=referral_reward.pending_bonus_gb)
     await state.clear()
+    await clear_purchase_draft(redis, callback.from_user.id)
     delivery_note = ""
     if recipient_telegram_id != buyer_telegram_id:
         claim_link = await gift_claim_link(bot, claim_token)
@@ -502,6 +706,7 @@ async def wallet_payment_selected(
                 text,
                 reply_markup=service_copy_keyboard(_, subscription_url),
             )
+            await send_config_messages_to_bot(bot, recipient_telegram_id, _, config_links, buyer_language, i18n.t)
         except Exception:
             logger.exception("Failed to deliver gifted service", extra={"order_id": order_id, "recipient": recipient_telegram_id})
             delivery_note = "\n\n" + _("gift_delivery_failed", telegram_id=recipient_telegram_id, claim_link=html_code(claim_link or "-"))
@@ -511,6 +716,7 @@ async def wallet_payment_selected(
         text + delivery_note,
         reply_markup=service_copy_keyboard(_, subscription_url),
     )
+    await send_config_messages(callback.message, _, config_links, buyer_language, i18n.t)  # type: ignore[arg-type]
     await notify_referrer_about_reward(bot, i18n, referral_reward)
     await callback.answer()
 
@@ -571,7 +777,8 @@ async def gift_delivery_config_selected(
                 await callback.answer(_("gift_delivery_unavailable"), show_alert=True)
                 return
             direct_account = await create_direct_gift_account(session, settings, buyer, order)
-            text = direct_gift_text(i18n.t, buyer.language, order, direct_account)
+            buyer_language = buyer.language
+            text = direct_gift_summary_text(i18n.t, buyer.language, order, direct_account)
     except Exception as exc:
         logger.exception("Direct gift delivery failed", extra={"order_id": callback_data.order_id})
         await callback.answer(_("wallet_purchase_failed", error=str(exc)), show_alert=True)
@@ -580,6 +787,7 @@ async def gift_delivery_config_selected(
         text,
         reply_markup=service_copy_keyboard(_, direct_account.subscription_url),
     )
+    await send_config_messages(callback.message, _, direct_account.config_links, buyer_language, i18n.t)  # type: ignore[arg-type]
     await callback.answer()
 
 
@@ -611,7 +819,8 @@ async def redeem_code_entered(
                 settings.default_language,
             )
             result = await redeem_gift_order(session, settings, user, message.text or "")
-            text = service_ready_text(i18n.t, user.language, result.order, result.service, result.config_links)
+            text = service_summary_text(i18n.t, user.language, result.order, result.service)
+            user_language = user.language
     except GiftRedeemInvalid:
         await message.answer(_("redeem_code_invalid"), reply_markup=back_to_menu_keyboard(_))
         return
@@ -634,6 +843,7 @@ async def redeem_code_entered(
     if result.referral_reward.pending_bonus_gb:
         text += "\n" + _("referral_pending_bonus_applied", bonus_gb=result.referral_reward.pending_bonus_gb)
     await message.answer(text, reply_markup=service_copy_keyboard(_, result.service.subscription_url))
+    await send_config_messages(message, _, result.config_links, user_language, i18n.t)
     await notify_referrer_about_reward(bot, i18n, result.referral_reward)
 
 
@@ -661,6 +871,27 @@ def service_ready_text(t, language: str, order, service, config_links: list[str]
         config_links=html_code_lines(config_links)
         if config_links
         else t("configs_not_available", language),
+    )
+
+
+def service_summary_text(t, language: str, order, service) -> str:
+    if order.package_type == PackageType.unlimited_time.value:
+        return t(
+            "service_ready_summary_unlimited",
+            language,
+            duration=duration_label(order.duration_days),
+            expire_at=optional_datetime(service.expire_at),
+            used=optional_gb(service.used_traffic_gb),
+            subscription_url=html_code(service.subscription_url or "-"),
+        )
+    return t(
+        "service_ready_summary",
+        language,
+        purchased_gb=order.gb_amount,
+        total_gb=optional_gb(service.data_limit_gb),
+        used=optional_gb(service.used_traffic_gb),
+        remaining=optional_gb(service.remaining_traffic_gb),
+        subscription_url=html_code(service.subscription_url or "-"),
     )
 
 
@@ -747,6 +978,7 @@ async def discount_code_entered(
     state: FSMContext,
     sessionmaker: async_sessionmaker,
     settings: Settings,
+    redis: Redis,
     _,
 ) -> None:
     code = (message.text or "").strip()
@@ -759,6 +991,9 @@ async def discount_code_entered(
         await message.answer(_("discount_invalid"), reply_markup=wallet_purchase_keyboard(_))
         return
     await state.update_data(price=final_price, discount_code=discount.code, discount_amount=amount)
+    updated_data = dict(data)
+    updated_data.update(price=final_price, discount_code=discount.code, discount_amount=amount)
+    await save_purchase_draft(redis, message.from_user.id, updated_data)
     await state.set_state(BuyStates.payment_method)
     assert message.from_user
     async with sessionmaker() as session:
@@ -775,8 +1010,9 @@ async def discount_code_entered(
         _("discount_applied", code=discount.code, discount=toman(amount), price=toman(final_price)),
         reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
     )
+    shortfall = max(final_price - balance, 0)
     await message.answer(
-        _("wallet_purchase_prompt",
+        _("wallet_purchase_prompt_low_balance" if shortfall else "wallet_purchase_prompt",
           package=order_package_label(
               _,
               str(data.get("package_type") or PackageType.traffic.value),
@@ -789,8 +1025,9 @@ async def discount_code_entered(
           ),
           gb=int(data["gb"]),
           price=toman(final_price),
-          balance=toman(balance)),
-        reply_markup=wallet_purchase_keyboard(_, allow_discount=False),
+          balance=toman(balance),
+          shortfall=toman(shortfall)),
+        reply_markup=wallet_purchase_keyboard(_, allow_discount=False, shortfall=shortfall),
     )
 
 

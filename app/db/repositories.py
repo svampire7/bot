@@ -22,6 +22,7 @@ from app.db.models import (
     VPNServiceStatus,
     WalletTransaction,
     WalletTransactionStatus,
+    WalletTransactionType,
 )
 from app.services.settings_cache import settings_cache
 
@@ -285,6 +286,19 @@ async def pending_wallet_topup_count(session: AsyncSession) -> int:
         )
         or 0
     )
+
+
+async def pending_wallet_topup_total_for_user(session: AsyncSession, user_id: int) -> int:
+    value = await session.scalar(
+        select(func.coalesce(func.sum(WalletTransaction.amount_toman), 0)).where(
+            WalletTransaction.user_id == user_id,
+            WalletTransaction.status == WalletTransactionStatus.pending_admin.value,
+            WalletTransaction.transaction_type.in_(
+                [WalletTransactionType.topup_card.value, WalletTransactionType.topup_ltc.value]
+            ),
+        )
+    )
+    return int(value or 0)
 
 
 async def wallet_transaction_for_update(session: AsyncSession, tx_id: int) -> WalletTransaction | None:

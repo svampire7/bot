@@ -47,7 +47,7 @@ from app.bot.keyboards.admin import (
     wallet_user_detail_keyboard,
     wallet_users_keyboard,
 )
-from app.bot.keyboards.user import main_menu, service_copy_keyboard
+from app.bot.keyboards.user import continue_purchase_keyboard, main_menu, service_copy_keyboard
 from app.bot.middlewares.admin_auth import AdminFilter
 from app.config import Settings
 from app.db.models import (
@@ -649,7 +649,14 @@ async def admin_wallet_action(
             user_message = i18n.t("wallet_topup_rejected", user_lang)
             admin_message = _("wallet_topup_rejected_admin", tx_id=tx.id)
         telegram_id = tx.user.telegram_id
-    await bot.send_message(telegram_id, user_message)
+    def user_t(key: str, **kwargs: object) -> str:
+        return i18n.t(key, user_lang, **kwargs)
+
+    await bot.send_message(
+        telegram_id,
+        user_message,
+        reply_markup=continue_purchase_keyboard(user_t) if callback_data.action == "approve" else None,
+    )
     try:
         await callback.message.edit_caption(caption=admin_message)  # type: ignore[union-attr]
     except TelegramBadRequest:
